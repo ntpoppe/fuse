@@ -18,7 +18,7 @@ func getHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("content-type", jsonContentType)
 	w.WriteHeader(http.StatusOK)
 
-	response := map[string]string{"key": "value"}
+	response := map[string]string{"status": "ok"}
 	err := json.NewEncoder(w).Encode(response)
 
 	if err != nil {
