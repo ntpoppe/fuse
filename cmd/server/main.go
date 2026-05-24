@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"flag"
 	"fmt"
 	"log"
@@ -16,11 +17,23 @@ import (
 	"github.com/ntpoppe/fuse/internal/config"
 	connectionmanager "github.com/ntpoppe/fuse/internal/connection_manager"
 	"github.com/ntpoppe/fuse/internal/registry"
+	"github.com/ntpoppe/fuse/internal/storage"
 )
 
 func main() {
 	config := config.NewConfig()
 	parseFlags(config)
+
+	stateDB, err := sql.Open("sqlite", "fuse.db")
+	if err != nil {
+		log.Fatalf("failed to anchor system state file: %v", err)
+	}
+	defer stateDB.Close()
+
+	store := storage.NewStore(stateDB)
+	if err := store.InitializeSchema(); err != nil {
+		log.Fatalf("state database migration error: %v", err)
+	}
 
 	registry := registry.NewRegistry()
 	connectionManager := connectionmanager.NewConnectionManager(registry)
