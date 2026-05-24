@@ -10,15 +10,22 @@ import (
 	"os/signal"
 	"time"
 
+	_ "modernc.org/sqlite"
+
 	"github.com/ntpoppe/fuse/internal/api"
 	"github.com/ntpoppe/fuse/internal/config"
+	connectionmanager "github.com/ntpoppe/fuse/internal/connection_manager"
+	"github.com/ntpoppe/fuse/internal/registry"
 )
 
 func main() {
 	config := config.NewConfig()
 	parseFlags(config)
 
-	router := api.NewRouter()
+	registry := registry.NewRegistry()
+	connectionManager := connectionmanager.NewConnectionManager(registry)
+
+	router := api.NewRouter(connectionManager)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", config.Port),

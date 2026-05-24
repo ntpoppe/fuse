@@ -7,10 +7,15 @@ import (
 	"testing"
 
 	"github.com/ntpoppe/fuse/internal/api"
+	connectionmanager "github.com/ntpoppe/fuse/internal/connection_manager"
+	"github.com/ntpoppe/fuse/internal/registry"
 )
 
 func TestHealthEndpoint_StatusOK(t *testing.T) {
-	router := api.NewRouter()
+	reg := registry.NewRegistry()
+	cm := connectionmanager.NewConnectionManager(reg)
+
+	router := api.NewRouter(cm)
 	req := httptest.NewRequest("GET", "/health", nil)
 	rec := httptest.NewRecorder()
 
@@ -22,7 +27,10 @@ func TestHealthEndpoint_StatusOK(t *testing.T) {
 }
 
 func TestHealthEndpoint_ContentType(t *testing.T) {
-	router := api.NewRouter()
+	reg := registry.NewRegistry()
+	cm := connectionmanager.NewConnectionManager(reg)
+
+	router := api.NewRouter(cm)
 	req := httptest.NewRequest("GET", "/health", nil)
 	rec := httptest.NewRecorder()
 
@@ -35,7 +43,10 @@ func TestHealthEndpoint_ContentType(t *testing.T) {
 }
 
 func TestHealthEndpoint_Body(t *testing.T) {
-	router := api.NewRouter()
+	reg := registry.NewRegistry()
+	cm := connectionmanager.NewConnectionManager(reg)
+
+	router := api.NewRouter(cm)
 	req := httptest.NewRequest("GET", "/health", nil)
 	rec := httptest.NewRecorder()
 

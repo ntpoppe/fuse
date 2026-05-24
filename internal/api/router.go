@@ -3,11 +3,13 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+
+	connectionmanager "github.com/ntpoppe/fuse/internal/connection_manager"
 )
 
 const jsonContentType = "application/json"
 
-func NewRouter() *http.ServeMux {
+func NewRouter(cm *connectionmanager.ConnectionManager) *http.ServeMux {
 	router := http.ServeMux{}
 	router.HandleFunc("GET /health", getHealth)
 
@@ -25,4 +27,10 @@ func getHealth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+}
+
+func postTestQuery(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("content-type", jsonContentType)
+	w.WriteHeader(http.StatusOK)
+
 }
