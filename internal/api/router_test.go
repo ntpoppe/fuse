@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,14 +9,36 @@ import (
 
 	"github.com/ntpoppe/fuse/internal/api"
 	connectionmanager "github.com/ntpoppe/fuse/internal/connection_manager"
+	"github.com/ntpoppe/fuse/internal/executor"
 	"github.com/ntpoppe/fuse/internal/registry"
+	"github.com/ntpoppe/fuse/internal/storage"
+
+	_ "modernc.org/sqlite"
 )
 
-func TestHealthEndpoint_StatusOK(t *testing.T) {
+func setupTestRouter(t *testing.T) *http.ServeMux {
+	t.Helper()
+
+	stateDB, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open test sqlite db: %v", err)
+	}
+
+	store := storage.NewStore(stateDB)
+	if err := store.InitializeSchema(); err != nil {
+		t.Fatalf("failed to init test storage schema: %v", err)
+	}
+
 	reg := registry.NewRegistry()
 	cm := connectionmanager.NewConnectionManager(reg)
+	exec := executor.NewExecutor(reg)
 
-	router := api.NewRouter(cm)
+	return api.NewRouter(cm, store, exec)
+}
+
+func TestHealthEndpoint_StatusOK(t *testing.T) {
+	router := setupTestRouter(t)
+
 	req := httptest.NewRequest("GET", "/health", nil)
 	rec := httptest.NewRecorder()
 
@@ -27,10 +50,8 @@ func TestHealthEndpoint_StatusOK(t *testing.T) {
 }
 
 func TestHealthEndpoint_ContentType(t *testing.T) {
-	reg := registry.NewRegistry()
-	cm := connectionmanager.NewConnectionManager(reg)
+	router := setupTestRouter(t)
 
-	router := api.NewRouter(cm)
 	req := httptest.NewRequest("GET", "/health", nil)
 	rec := httptest.NewRecorder()
 
@@ -43,10 +64,8 @@ func TestHealthEndpoint_ContentType(t *testing.T) {
 }
 
 func TestHealthEndpoint_Body(t *testing.T) {
-	reg := registry.NewRegistry()
-	cm := connectionmanager.NewConnectionManager(reg)
+	router := setupTestRouter(t)
 
-	router := api.NewRouter(cm)
 	req := httptest.NewRequest("GET", "/health", nil)
 	rec := httptest.NewRecorder()
 

@@ -16,6 +16,7 @@ import (
 	"github.com/ntpoppe/fuse/internal/api"
 	"github.com/ntpoppe/fuse/internal/config"
 	connectionmanager "github.com/ntpoppe/fuse/internal/connection_manager"
+	"github.com/ntpoppe/fuse/internal/executor"
 	"github.com/ntpoppe/fuse/internal/registry"
 	"github.com/ntpoppe/fuse/internal/storage"
 )
@@ -26,19 +27,35 @@ func main() {
 
 	stateDB, err := sql.Open("sqlite", "fuse.db")
 	if err != nil {
-		log.Fatalf("failed to anchor system state file: %v", err)
+		log.Fatalf("failed to open local state store file database: %v", err)
 	}
 	defer stateDB.Close()
 
 	store := storage.NewStore(stateDB)
 	if err := store.InitializeSchema(); err != nil {
-		log.Fatalf("state database migration error: %v", err)
+		log.Fatalf("failed to verify schema migrations on local state database: %v", err)
 	}
 
-	registry := registry.NewRegistry()
-	connectionManager := connectionmanager.NewConnectionManager(registry)
+	reg := registry.NewRegistry()
+	cm := connectionmanager.NewConnectionManager(reg)
+	exec := executor.NewExecutor(reg)
 
-	router := api.NewRouter(connectionManager)
+	initCtx, initCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer initCancel()
+
+	savedPools, err := store.GetAllConnections(initCtx)
+	if err != nil {
+		log.Printf("warning: failed to restore historical database targets configuration: %v", err)
+	}
+
+	for _, p := range savedPools {
+		log.Printf("re-initializing connection tracking pool configuration for targets: %s", p.ID)
+		if err := cm.RegisterNewConnection(p.ID, p.Driver, p.Host); err != nil {
+			log.Printf("failed to re-warm engine connection pool for target %q: %v", p.ID, err)
+		}
+	}
+
+	router := api.NewRouter(cm, store, exec)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", config.Port),
@@ -55,19 +72,15 @@ func main() {
 		}
 	}()
 
-	// listen for SIGINT or SIGTERM
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt)
 
-	// blocks until signal is received
 	<-quit
 	fmt.Println("shutting down server...")
 
-	// create context with timeout, grace period for existing requests
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// shutdown the server under timeout context
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Fatalf("server forced to shutdown, missed deadline: %v\n", err)
 	}
