@@ -12,8 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	_ "modernc.org/sqlite"
-
 	"github.com/ntpoppe/fuse/internal/api"
 	"github.com/ntpoppe/fuse/internal/config"
 	connectionmanager "github.com/ntpoppe/fuse/internal/connection_manager"
@@ -50,7 +48,7 @@ func main() {
 	}
 
 	for _, p := range savedPools {
-		log.Printf("registering connection pool for target %q", p.ID)
+		log.Printf("registering connection pool for target %q with driver %q and host %q", p.ID, p.Driver, p.Host)
 		if err := cm.RegisterConnection(p.ID, p.Driver, p.Host); err != nil {
 			log.Printf("failed to register connection pool for target %q: %v", p.ID, err)
 		}

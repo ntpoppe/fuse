@@ -42,7 +42,7 @@ func NewRouter(
 	}
 
 	router.HandleFunc("GET /health", h.GetHealth)
-	router.HandleFunc("POST /api/connections", h.PostConnections)
+	router.HandleFunc("POST /api/connections", h.PostConnection)
 	router.HandleFunc("POST /api/query", h.PostQuery)
 
 	return &router
@@ -58,7 +58,7 @@ func (h *Handler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) PostConnections(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) PostConnection(w http.ResponseWriter, r *http.Request) {
 	var payload connectionPayload
 
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {

@@ -111,3 +111,64 @@ func TestRemoveConnection_NotFound(t *testing.T) {
 		t.Fatal("expected error when removing a missing connection, got nil")
 	}
 }
+
+func TestNormalizeHost(t *testing.T) {
+	tests := []struct {
+		name   string
+		driver string
+		host   string
+		want   string
+	}{
+		{
+			name:   "sqlite plain path",
+			driver: "sqlite",
+			host:   "dev_target.db",
+			want:   "file:dev_target.db?mode=ro",
+		},
+		{
+			name:   "sqlite file prefix",
+			driver: "sqlite",
+			host:   "file:dev_target.db",
+			want:   "file:dev_target.db?mode=ro",
+		},
+		{
+			name:   "sqlite already read only",
+			driver: "sqlite",
+			host:   "file:dev_target.db?mode=ro",
+			want:   "file:dev_target.db?mode=ro",
+		},
+		{
+			name:   "sqlite plain path with existing mode suffix",
+			driver: "sqlite",
+			host:   "dev_target.db?mode=ro",
+			want:   "file:dev_target.db?mode=ro",
+		},
+		{
+			name:   "mysql passthrough",
+			driver: "mysql",
+			host:   "user:pass@tcp(localhost:3306)/mydb",
+			want:   "user:pass@tcp(localhost:3306)/mydb",
+		},
+		{
+			name:   "sql server passthrough",
+			driver: "sqlserver",
+			host:   "sqlserver://user:pass@localhost:1433?database=mydb",
+			want:   "sqlserver://user:pass@localhost:1433?database=mydb",
+		},
+		{
+			name:   "unknown driver passthrough",
+			driver: "postgres",
+			host:   "postgres://localhost/mydb",
+			want:   "postgres://localhost/mydb",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := connectionmanager.NormalizeHost(tt.driver, tt.host)
+			if got != tt.want {
+				t.Errorf("NormalizeHost(%q, %q) = %q, want %q", tt.driver, tt.host, got, tt.want)
+			}
+		})
+	}
+}
