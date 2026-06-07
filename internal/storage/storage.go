@@ -45,6 +45,16 @@ func (s *Store) SaveConnection(ctx context.Context, conn SavedConnection) error 
 	return nil
 }
 
+func (s *Store) RemoveConnection(ctx context.Context, id string) error {
+	query := `DELETE FROM saved_connections WHERE id = ?;`
+
+	_, err := s.db.ExecContext(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("failed to remove connection from local store file: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) GetAllConnections(ctx context.Context) ([]SavedConnection, error) {
 	query := `SELECT id, driver, host FROM saved_connections;`
 

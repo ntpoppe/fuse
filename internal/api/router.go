@@ -43,6 +43,7 @@ func NewRouter(
 
 	router.HandleFunc("GET /health", h.GetHealth)
 	router.HandleFunc("POST /api/connections", h.PostConnection)
+	router.HandleFunc("DELETE /api/connections/{id}", h.DeleteConnection)
 	router.HandleFunc("POST /api/query", h.PostQuery)
 
 	return &router
@@ -82,6 +83,26 @@ func (h *Handler) PostConnection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
+}
+
+func (h *Handler) DeleteConnection(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "missing connection identifier", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.cm.RemoveConnection(id); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	if err := h.store.RemoveConnection(r.Context(), id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) PostQuery(w http.ResponseWriter, r *http.Request) {

@@ -217,6 +217,76 @@ func TestHandler_PostConnection_DuplicateID(t *testing.T) {
 	assertBodyContains(t, rec, "already exists")
 }
 
+func registerMockConnection(t *testing.T, env apiEnv, id string) {
+	t.Helper()
+
+	driver := testutil.RegisterNamedMockDriver(t, "conn", false)
+	rec := doJSON(t, env.router, http.MethodPost, "/api/connections", map[string]string{
+		"id": id, "driver": driver, "host": "localhost:3306",
+	})
+	assertStatus(t, rec, http.StatusCreated)
+}
+
+func TestHandler_DeleteConnection(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		setup      func(t *testing.T, env apiEnv) string
+		wantStatus int
+		bodySubstr string
+		verify     func(t *testing.T, env apiEnv, id string)
+	}{
+		{
+			name: "success",
+			setup: func(t *testing.T, env apiEnv) string {
+				id := "conn1"
+				registerMockConnection(t, env, id)
+				return id
+			},
+			wantStatus: http.StatusNoContent,
+			verify: func(t *testing.T, env apiEnv, id string) {
+				if err := env.cm.RemoveConnection(id); err == nil {
+					t.Fatal("expected connection to be removed from registry")
+				}
+
+				connections, err := env.store.GetAllConnections(testutil.Context(t))
+				if err != nil {
+					t.Fatalf("load saved connections: %v", err)
+				}
+				if len(connections) != 0 {
+					t.Fatalf("saved connections = %+v, want empty", connections)
+				}
+			},
+		},
+		{
+			name:       "unknown connection",
+			setup:      func(*testing.T, apiEnv) string { return "missing" },
+			wantStatus: http.StatusNotFound,
+			bodySubstr: "does not exist",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			env := newAPIEnv(t)
+			id := tt.setup(t, env)
+
+			rec := doRequest(t, env.router, http.MethodDelete, "/api/connections/"+id, nil, "")
+			assertStatus(t, rec, tt.wantStatus)
+
+			if tt.bodySubstr != "" {
+				assertBodyContains(t, rec, tt.bodySubstr)
+			}
+			if tt.verify != nil {
+				tt.verify(t, env, id)
+			}
+		})
+	}
+}
+
 func TestHandler_PostQuery(t *testing.T) {
 	t.Parallel()
 

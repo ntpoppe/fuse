@@ -32,5 +32,8 @@ func (r *Registry) Save(key string, val *sql.DB) {
 }
 
 func (r *Registry) Delete(key string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	delete(r.cache, key)
 }

@@ -116,3 +116,55 @@ func TestStore_SaveConnection_Upsert(t *testing.T) {
 		t.Fatalf("host = %q, want %q", connections[0].Host, updated.Host)
 	}
 }
+
+func TestStore_RemoveConnection(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, store *storage.Store) (removeID string, wantCount int)
+	}{
+		{
+			name: "removes saved connection",
+			setup: func(t *testing.T, store *storage.Store) (string, int) {
+				saveConnection(t, store, storage.SavedConnection{
+					ID: "prod_mysql", Driver: "mysql", Host: "host1",
+				})
+				return "prod_mysql", 0
+			},
+		},
+		{
+			name: "removes only target connection",
+			setup: func(t *testing.T, store *storage.Store) (string, int) {
+				saveConnection(t, store, storage.SavedConnection{
+					ID: "keep_me", Driver: "mysql", Host: "host1",
+				})
+				saveConnection(t, store, storage.SavedConnection{
+					ID: "remove_me", Driver: "sqlite", Host: "host2",
+				})
+				return "remove_me", 1
+			},
+		},
+		{
+			name: "unknown id is no-op",
+			setup: func(*testing.T, *storage.Store) (string, int) {
+				return "missing", 0
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store, _ := newStore(t)
+			removeID, wantCount := tt.setup(t, store)
+
+			if err := store.RemoveConnection(testutil.Context(t), removeID); err != nil {
+				t.Fatalf("remove connection %q: %v", removeID, err)
+			}
+
+			if got := len(getConnections(t, store)); got != wantCount {
+				t.Fatalf("connection count = %d, want %d", got, wantCount)
+			}
+		})
+	}
+}
