@@ -6,45 +6,54 @@ import (
 	"github.com/ntpoppe/fuse/internal/config"
 )
 
-func TestValidate_ValidConfig(t *testing.T) {
-	c := &config.Config{Port: 8080, Env: "dev"}
-	if err := c.Validate(); err != nil {
-		t.Errorf("expected no error, got %v", err)
-	}
-}
+func TestConfig_Validate(t *testing.T) {
+	t.Parallel()
 
-func TestValidate_PortTooLow(t *testing.T) {
-	c := &config.Config{Port: 0, Env: "dev"}
-	if err := c.Validate(); err == nil {
-		t.Error("expected error for port 0, got nil")
+	tests := []struct {
+		name    string
+		cfg     config.Config
+		wantErr bool
+	}{
+		{
+			name: "valid dev config",
+			cfg:  config.Config{Port: 8080, Env: "dev"},
+		},
+		{
+			name: "valid prod config",
+			cfg:  config.Config{Port: 8080, Env: "prod"},
+		},
+		{
+			name: "privileged port allowed",
+			cfg:  config.Config{Port: 80, Env: "dev"},
+		},
+		{
+			name:    "port too low",
+			cfg:     config.Config{Port: 0, Env: "dev"},
+			wantErr: true,
+		},
+		{
+			name:    "port too high",
+			cfg:     config.Config{Port: 99999, Env: "dev"},
+			wantErr: true,
+		},
+		{
+			name:    "invalid environment",
+			cfg:     config.Config{Port: 8080, Env: "staging"},
+			wantErr: true,
+		},
 	}
-}
 
-func TestValidate_PortTooHigh(t *testing.T) {
-	c := &config.Config{Port: 99999, Env: "dev"}
-	if err := c.Validate(); err == nil {
-		t.Error("expected error for port 99999, got nil")
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-func TestValidate_InvalidEnv(t *testing.T) {
-	c := &config.Config{Port: 8080, Env: "staging"}
-	if err := c.Validate(); err == nil {
-		t.Error("expected error for invalid env, got nil")
-	}
-}
-
-func TestValidate_ProdEnv(t *testing.T) {
-	c := &config.Config{Port: 8080, Env: "prod"}
-	if err := c.Validate(); err != nil {
-		t.Errorf("expected no error for prod env, got %v", err)
-	}
-}
-
-func TestValidate_PrivilegedPort(t *testing.T) {
-	// Port 80 is privileged but should not return an error
-	c := &config.Config{Port: 80, Env: "dev"}
-	if err := c.Validate(); err != nil {
-		t.Errorf("expected no error for privileged port, got %v", err)
+			err := tt.cfg.Validate()
+			if tt.wantErr && err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+		})
 	}
 }

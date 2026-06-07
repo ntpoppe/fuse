@@ -2,106 +2,153 @@ package registry_test
 
 import (
 	"database/sql"
+	"strconv"
 	"sync"
 	"testing"
 
 	"github.com/ntpoppe/fuse/internal/registry"
 )
 
-func TestRegistry_SaveAndFetch(t *testing.T) {
-	reg := registry.NewRegistry()
-	mockDB := &sql.DB{} // Placeholder connection handle for testing
-	key := "mysql_production"
+func newRegistry(t *testing.T) *registry.Registry {
+	t.Helper()
+	return registry.NewRegistry()
+}
 
-	// Test case 1: Key does not exist initially
-	_, found := reg.Fetch(key)
-	if found {
-		t.Errorf("expected key %q to be missing, but it was found", key)
+func TestRegistry_Fetch(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		key       string
+		setup     func(*registry.Registry, string)
+		wantFound bool
+	}{
+		{
+			name:      "missing key",
+			key:       "missing",
+			wantFound: false,
+		},
+		{
+			name: "existing key",
+			key:  "mysql_production",
+			setup: func(reg *registry.Registry, key string) {
+				reg.Save(key, &sql.DB{})
+			},
+			wantFound: true,
+		},
 	}
 
-	// Test case 2: Save key and fetch it back
-	reg.Save(key, mockDB)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	fetchedDB, found := reg.Fetch(key)
-	if !found {
-		t.Fatalf("expected key %q to be found after saving, but it was missing", key)
-	}
+			reg := newRegistry(t)
+			if tt.setup != nil {
+				tt.setup(reg, tt.key)
+			}
 
-	if fetchedDB != mockDB {
-		t.Error("fetched connection pool pointer did not match the saved pointer instance")
+			_, found := reg.Fetch(tt.key)
+			if found != tt.wantFound {
+				t.Fatalf("Fetch(%q) found = %v, want %v", tt.key, found, tt.wantFound)
+			}
+		})
 	}
 }
 
-func TestRegistry_FetchMissingKey(t *testing.T) {
-	reg := registry.NewRegistry()
+func TestRegistry_SaveAndFetchPointer(t *testing.T) {
+	reg := newRegistry(t)
+	mockDB := &sql.DB{}
+	key := "mysql_production"
 
-	val, found := reg.Fetch("non_existent_connection")
-	if found {
-		t.Errorf("expected found to be false for a missing key, got true")
+	reg.Save(key, mockDB)
+
+	got, found := reg.Fetch(key)
+	if !found {
+		t.Fatal("expected saved key to be found")
 	}
-	if val != nil {
-		t.Errorf("expected returned pool to be nil for a missing key, got %v", val)
+	if got != mockDB {
+		t.Fatal("fetched pointer does not match saved pointer")
 	}
 }
 
 func TestRegistry_Delete(t *testing.T) {
-	reg := registry.NewRegistry()
-	mockDB := &sql.DB{}
-	key := "postgres_staging"
+	t.Parallel()
 
-	reg.Save(key, mockDB)
+	tests := []struct {
+		name      string
+		setup     func(*registry.Registry) string
+		wantFound bool
+	}{
+		{
+			name: "delete existing key",
+			setup: func(reg *registry.Registry) string {
+				key := "postgres_staging"
+				reg.Save(key, &sql.DB{})
+				reg.Delete(key)
+				return key
+			},
+			wantFound: false,
+		},
+		{
+			name: "delete missing key is no-op",
+			setup: func(reg *registry.Registry) string {
+				key := "missing"
+				reg.Delete(key)
+				return key
+			},
+			wantFound: false,
+		},
+	}
 
-	reg.Delete(key)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	_, found := reg.Fetch(key)
-	if found {
-		t.Errorf("expected key %q to be missing after delete, but it was found", key)
+			reg := newRegistry(t)
+			key := tt.setup(reg)
+
+			_, found := reg.Fetch(key)
+			if found != tt.wantFound {
+				t.Fatalf("Fetch(%q) found = %v, want %v", key, found, tt.wantFound)
+			}
+		})
 	}
 }
 
-func TestRegistry_DeleteMissingKey(t *testing.T) {
-	reg := registry.NewRegistry()
-
-	reg.Delete("non_existent_connection")
-
-	_, found := reg.Fetch("non_existent_connection")
-	if found {
-		t.Error("expected delete of missing key to be a no-op, but key was found")
-	}
-}
-
-func TestRegistry_ConcurrencyRaceCondition(t *testing.T) {
-	reg := registry.NewRegistry()
+func TestRegistry_Concurrency(t *testing.T) {
+	reg := newRegistry(t)
 	mockDB := &sql.DB{}
+
+	const workers = 50
+	const iterations = 100
 
 	var wg sync.WaitGroup
-	workers := 50
-	iterations := 100
+	wg.Add(workers * 2)
 
-	// Kick off concurrent writers
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func(workerID int) {
+	for i := range workers {
+		workerID := strconv.Itoa(i)
+
+		go func() {
 			defer wg.Done()
-			for j := 0; j < iterations; j++ {
-				// Each worker writes cleanly to its own specific database slot
-				reg.Save(string(rune(workerID)), mockDB)
+			for range iterations {
+				reg.Save(workerID, mockDB)
 			}
-		}(i)
+		}()
+
+		go func() {
+			defer wg.Done()
+			for range iterations {
+				_, _ = reg.Fetch(workerID)
+			}
+		}()
 	}
 
-	// Kick off concurrent readers
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func(workerID int) {
-			defer wg.Done()
-			for j := 0; j < iterations; j++ {
-				// Simultaneous reading paths hammering the RWMutex
-				_, _ = reg.Fetch(string(rune(workerID)))
-			}
-		}(i)
-	}
-
-	// Block until all concurrent goroutines finish execution
 	wg.Wait()
+
+	for i := range workers {
+		key := strconv.Itoa(i)
+		if _, found := reg.Fetch(key); !found {
+			t.Fatalf("expected key %q to exist after concurrent writes", key)
+		}
+	}
 }

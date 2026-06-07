@@ -1,397 +1,316 @@
 package api_test
 
 import (
-	"context"
-	"database/sql"
-	"database/sql/driver"
 	"encoding/json"
-	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/ntpoppe/fuse/internal/api"
 	connectionmanager "github.com/ntpoppe/fuse/internal/connection_manager"
 	"github.com/ntpoppe/fuse/internal/executor"
 	"github.com/ntpoppe/fuse/internal/registry"
 	"github.com/ntpoppe/fuse/internal/storage"
-
-	_ "modernc.org/sqlite"
+	"github.com/ntpoppe/fuse/internal/testutil"
 )
 
-type testEnv struct {
+type apiEnv struct {
 	router *http.ServeMux
 	store  *storage.Store
 	cm     *connectionmanager.ConnectionManager
 }
 
-type mockDriver struct{ failPing bool }
-type mockConn struct{ failPing bool }
-
-func (d *mockDriver) Open(name string) (driver.Conn, error) {
-	return &mockConn{failPing: d.failPing}, nil
-}
-
-func (c *mockConn) Ping(ctx context.Context) error {
-	if c.failPing {
-		return errors.New("network destination unreachable")
-	}
-	return nil
-}
-
-func (c *mockConn) Prepare(query string) (driver.Stmt, error) { return nil, nil }
-func (c *mockConn) Close() error                              { return nil }
-func (c *mockConn) Begin() (driver.Tx, error)                 { return nil, nil }
-
-func setupTestEnv(t *testing.T) testEnv {
+func newAPIEnv(t *testing.T) apiEnv {
 	t.Helper()
 
-	stateDB, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("failed to open test sqlite db: %v", err)
-	}
-
-	store := storage.NewStore(stateDB)
+	store := storage.NewStore(testutil.OpenSQLiteMemory(t))
 	if err := store.InitializeSchema(); err != nil {
-		t.Fatalf("failed to init test storage schema: %v", err)
+		t.Fatalf("initialize schema: %v", err)
 	}
 
 	reg := registry.NewRegistry()
 	cm := connectionmanager.NewConnectionManager(reg)
 	exec := executor.NewExecutor(reg)
 
-	return testEnv{
+	return apiEnv{
 		router: api.NewRouter(cm, store, exec),
 		store:  store,
 		cm:     cm,
 	}
 }
 
-func setupTestRouter(t *testing.T) *http.ServeMux {
-	t.Helper()
-	return setupTestEnv(t).router
-}
-
-func createSeededSQLiteDB(t *testing.T) string {
+func doRequest(t *testing.T, handler http.Handler, method, path string, body io.Reader, contentType string) *httptest.ResponseRecorder {
 	t.Helper()
 
-	path := filepath.Join(t.TempDir(), "target.db")
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatalf("failed to open seed sqlite db: %v", err)
-	}
-	defer db.Close()
-
-	_, err = db.Exec(`
-		CREATE TABLE items (
-			id INTEGER PRIMARY KEY,
-			name TEXT NOT NULL
-		);
-		INSERT INTO items (name) VALUES ('alpha'), ('beta');
-	`)
-	if err != nil {
-		t.Fatalf("failed to seed sqlite db: %v", err)
+	req := httptest.NewRequest(method, path, body)
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 
-	return path
-}
-
-func TestHealthEndpoint_StatusOK(t *testing.T) {
-	router := setupTestRouter(t)
-
-	req := httptest.NewRequest("GET", "/health", nil)
 	rec := httptest.NewRecorder()
-
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", rec.Code)
-	}
+	handler.ServeHTTP(rec, req)
+	return rec
 }
 
-func TestHealthEndpoint_ContentType(t *testing.T) {
-	router := setupTestRouter(t)
-
-	req := httptest.NewRequest("GET", "/health", nil)
-	rec := httptest.NewRecorder()
-
-	router.ServeHTTP(rec, req)
-
-	ct := rec.Header().Get("Content-Type")
-	if ct != "application/json" {
-		t.Errorf("expected Content-Type application/json, got %s", ct)
-	}
-}
-
-func TestHealthEndpoint_Body(t *testing.T) {
-	router := setupTestRouter(t)
-
-	req := httptest.NewRequest("GET", "/health", nil)
-	rec := httptest.NewRecorder()
-
-	router.ServeHTTP(rec, req)
-
-	var body map[string]string
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatalf("failed to decode response body: %v", err)
-	}
-
-	if body["status"] != "ok" {
-		t.Errorf("expected status 'ok', got %q", body["status"])
-	}
-}
-
-func TestPostConnection_Success(t *testing.T) {
-	sql.Register("mock_api_healthy", &mockDriver{failPing: false})
-
-	env := setupTestEnv(t)
-	body := `{"id":"conn1","driver":"mock_api_healthy","host":"localhost:3306"}`
-
-	req := httptest.NewRequest("POST", "/api/connections", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	env.router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("expected status 201, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	connections, err := env.store.GetAllConnections(ctx)
-	if err != nil {
-		t.Fatalf("failed to load saved connections: %v", err)
-	}
-	if len(connections) != 1 {
-		t.Fatalf("expected 1 saved connection, got %d", len(connections))
-	}
-	if connections[0].ID != "conn1" || connections[0].Driver != "mock_api_healthy" {
-		t.Errorf("unexpected saved connection: %+v", connections[0])
-	}
-}
-
-func TestPostConnection_InvalidJSON(t *testing.T) {
-	router := setupTestRouter(t)
-
-	req := httptest.NewRequest("POST", "/api/connections", strings.NewReader("{invalid"))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("expected status 400, got %d", rec.Code)
-	}
-	if !strings.Contains(rec.Body.String(), "Invalid JSON structure payload") {
-		t.Errorf("expected invalid JSON error, got %q", rec.Body.String())
-	}
-}
-
-func TestPostConnection_InvalidDriver(t *testing.T) {
-	router := setupTestRouter(t)
-	body := `{"id":"conn1","driver":"non_existent_driver","host":"localhost:9999"}`
-
-	req := httptest.NewRequest("POST", "/api/connections", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("expected status 400, got %d", rec.Code)
-	}
-}
-
-func TestPostConnection_UnreachableHost(t *testing.T) {
-	sql.Register("mock_api_unreachable", &mockDriver{failPing: true})
-
-	router := setupTestRouter(t)
-	body := `{"id":"conn1","driver":"mock_api_unreachable","host":"localhost:3306"}`
-
-	req := httptest.NewRequest("POST", "/api/connections", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("expected status 400, got %d", rec.Code)
-	}
-	if !strings.Contains(rec.Body.String(), "failed to ping") {
-		t.Errorf("expected ping failure error, got %q", rec.Body.String())
-	}
-}
-
-func TestPostConnection_DuplicateID(t *testing.T) {
-	sql.Register("mock_api_duplicate", &mockDriver{failPing: false})
-
-	router := setupTestRouter(t)
-	body := `{"id":"conn1","driver":"mock_api_duplicate","host":"localhost:3306"}`
-
-	req := httptest.NewRequest("POST", "/api/connections", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("expected first registration to succeed with 201, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	rec = httptest.NewRecorder()
-	req = httptest.NewRequest("POST", "/api/connections", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("expected status 400 for duplicate id, got %d", rec.Code)
-	}
-	if !strings.Contains(rec.Body.String(), "already exists") {
-		t.Errorf("expected duplicate id error, got %q", rec.Body.String())
-	}
-}
-
-func registerSQLiteConnection(t *testing.T, env testEnv, id string, dbPath string) {
+func doJSON(t *testing.T, handler http.Handler, method, path string, payload any) *httptest.ResponseRecorder {
 	t.Helper()
 
-	connBodyBytes, err := json.Marshal(map[string]string{
+	var body io.Reader
+	if payload != nil {
+		switch v := payload.(type) {
+		case string:
+			body = strings.NewReader(v)
+		default:
+			data, err := json.Marshal(v)
+			if err != nil {
+				t.Fatalf("marshal request body: %v", err)
+			}
+			body = strings.NewReader(string(data))
+		}
+	}
+
+	return doRequest(t, handler, method, path, body, "application/json")
+}
+
+func assertStatus(t *testing.T, rec *httptest.ResponseRecorder, want int) {
+	t.Helper()
+	if rec.Code != want {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, want, rec.Body.String())
+	}
+}
+
+func assertBodyContains(t *testing.T, rec *httptest.ResponseRecorder, want string) {
+	t.Helper()
+	if !strings.Contains(rec.Body.String(), want) {
+		t.Fatalf("body = %q, want substring %q", rec.Body.String(), want)
+	}
+}
+
+
+func registerSQLiteConnection(t *testing.T, env apiEnv, id, dbPath string) {
+	t.Helper()
+
+	rec := doJSON(t, env.router, http.MethodPost, "/api/connections", map[string]string{
 		"id":     id,
 		"driver": "sqlite",
 		"host":   dbPath,
 	})
-	if err != nil {
-		t.Fatalf("failed to marshal connection payload: %v", err)
-	}
-
-	req := httptest.NewRequest("POST", "/api/connections", strings.NewReader(string(connBodyBytes)))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	env.router.ServeHTTP(rec, req)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("failed to register connection: %d %s", rec.Code, rec.Body.String())
-	}
+	assertStatus(t, rec, http.StatusCreated)
 
 	t.Cleanup(func() {
 		if err := env.cm.RemoveConnection(id); err != nil {
-			t.Errorf("failed to remove test connection %q: %v", id, err)
+			t.Errorf("remove test connection %q: %v", id, err)
 		}
 	})
 }
 
-func TestPostQuery_Success(t *testing.T) {
-	env := setupTestEnv(t)
-	dbPath := createSeededSQLiteDB(t)
-	registerSQLiteConnection(t, env, "query_conn", dbPath)
+func TestHandler_Health(t *testing.T) {
+	t.Parallel()
 
-	queryBody := `{"id":"query_conn","sql":"SELECT id, name FROM items ORDER BY id ASC"}`
-	req := httptest.NewRequest("POST", "/api/query", strings.NewReader(queryBody))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	env.router.ServeHTTP(rec, req)
+	env := newAPIEnv(t)
+	rec := doRequest(t, env.router, http.MethodGet, "/health", nil, "")
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	assertStatus(t, rec, http.StatusOK)
+
+	if got := rec.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("content-type = %q, want application/json", got)
 	}
 
-	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
-		t.Errorf("expected Content-Type application/json, got %s", ct)
+	var body map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
 	}
-
-	var results []map[string]any
-	if err := json.NewDecoder(rec.Body).Decode(&results); err != nil {
-		t.Fatalf("failed to decode query response: %v", err)
-	}
-	if len(results) != 2 {
-		t.Fatalf("expected 2 rows, got %d", len(results))
-	}
-	if results[0]["name"] != "alpha" {
-		t.Errorf("expected first row name 'alpha', got %v", results[0]["name"])
+	if body["status"] != "ok" {
+		t.Fatalf("status = %q, want ok", body["status"])
 	}
 }
 
-func TestPostQuery_InvalidJSON(t *testing.T) {
-	router := setupTestRouter(t)
-
-	req := httptest.NewRequest("POST", "/api/query", strings.NewReader("not-json"))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("expected status 400, got %d", rec.Code)
-	}
-	if !strings.Contains(rec.Body.String(), "Invalid JSON structure payload") {
-		t.Errorf("expected invalid JSON error, got %q", rec.Body.String())
-	}
-}
-
-func TestPostQuery_MissingFields(t *testing.T) {
-	router := setupTestRouter(t)
+func TestHandler_PostConnection(t *testing.T) {
+	t.Parallel()
 
 	tests := []struct {
-		name string
-		body string
+		name       string
+		setup      func(t *testing.T, env apiEnv) any
+		wantStatus int
+		bodySubstr string
+		verify     func(t *testing.T, env apiEnv)
 	}{
-		{name: "missing id", body: `{"sql":"SELECT 1"}`},
-		{name: "missing sql", body: `{"id":"conn1"}`},
-		{name: "empty fields", body: `{"id":"","sql":""}`},
+		{
+			name: "success",
+			setup: func(t *testing.T, env apiEnv) any {
+				driver := testutil.RegisterNamedMockDriver(t, "healthy", false)
+				return map[string]string{
+					"id": "conn1", "driver": driver, "host": "localhost:3306",
+				}
+			},
+			wantStatus: http.StatusCreated,
+			verify: func(t *testing.T, env apiEnv) {
+				connections, err := env.store.GetAllConnections(testutil.Context(t))
+				if err != nil {
+					t.Fatalf("load saved connections: %v", err)
+				}
+				if len(connections) != 1 || connections[0].ID != "conn1" {
+					t.Fatalf("saved connections = %+v, want one conn1 record", connections)
+				}
+			},
+		},
+		{
+			name:       "invalid json",
+			setup:      func(*testing.T, apiEnv) any { return "{invalid" },
+			wantStatus: http.StatusBadRequest,
+			bodySubstr: "Invalid JSON structure payload",
+		},
+		{
+			name: "invalid driver",
+			setup: func(*testing.T, apiEnv) any {
+				return map[string]string{
+					"id": "conn1", "driver": "non_existent_driver", "host": "localhost:9999",
+				}
+			},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name: "unreachable host",
+			setup: func(t *testing.T, env apiEnv) any {
+				driver := testutil.RegisterNamedMockDriver(t, "unreachable", true)
+				return map[string]string{
+					"id": "conn1", "driver": driver, "host": "localhost:3306",
+				}
+			},
+			wantStatus: http.StatusBadRequest,
+			bodySubstr: "failed to ping",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("POST", "/api/query", strings.NewReader(tt.body))
-			req.Header.Set("Content-Type", "application/json")
-			rec := httptest.NewRecorder()
+			t.Parallel()
 
-			router.ServeHTTP(rec, req)
+			env := newAPIEnv(t)
+			rec := doJSON(t, env.router, http.MethodPost, "/api/connections", tt.setup(t, env))
+			assertStatus(t, rec, tt.wantStatus)
 
-			if rec.Code != http.StatusBadRequest {
-				t.Errorf("expected status 400, got %d", rec.Code)
+			if tt.bodySubstr != "" {
+				assertBodyContains(t, rec, tt.bodySubstr)
 			}
-			if !strings.Contains(rec.Body.String(), "Missing mandatory") {
-				t.Errorf("expected missing fields error, got %q", rec.Body.String())
+			if tt.verify != nil {
+				tt.verify(t, env)
 			}
 		})
 	}
 }
 
-func TestPostQuery_InvalidSQL(t *testing.T) {
-	env := setupTestEnv(t)
-	dbPath := createSeededSQLiteDB(t)
-	registerSQLiteConnection(t, env, "query_conn", dbPath)
-
-	queryBody := `{"id":"query_conn","sql":"SELECT * FROM missing_table"}`
-	req := httptest.NewRequest("POST", "/api/query", strings.NewReader(queryBody))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	env.router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("expected status 500, got %d", rec.Code)
+func TestHandler_PostConnection_DuplicateID(t *testing.T) {
+	env := newAPIEnv(t)
+	driver := testutil.RegisterNamedMockDriver(t, "duplicate", false)
+	payload := map[string]string{
+		"id": "conn1", "driver": driver, "host": "localhost:3306",
 	}
-	if !strings.Contains(rec.Body.String(), "error querying") {
-		t.Errorf("expected query error, got %q", rec.Body.String())
-	}
+
+	rec := doJSON(t, env.router, http.MethodPost, "/api/connections", payload)
+	assertStatus(t, rec, http.StatusCreated)
+
+	rec = doJSON(t, env.router, http.MethodPost, "/api/connections", payload)
+	assertStatus(t, rec, http.StatusBadRequest)
+	assertBodyContains(t, rec, "already exists")
 }
 
-func TestPostQuery_UnknownConnection(t *testing.T) {
-	router := setupTestRouter(t)
-	body := `{"id":"missing_conn","sql":"SELECT 1"}`
+func TestHandler_PostQuery(t *testing.T) {
+	t.Parallel()
 
-	req := httptest.NewRequest("POST", "/api/query", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
+	tests := []struct {
+		name       string
+		setup      func(t *testing.T, env apiEnv) string
+		wantStatus int
+		bodySubstr string
+		verify     func(t *testing.T, rec *httptest.ResponseRecorder)
+	}{
+		{
+			name: "success",
+			setup: func(t *testing.T, env apiEnv) string {
+				dbPath := testutil.SeedSQLiteFile(t, `
+					CREATE TABLE items (
+						id INTEGER PRIMARY KEY,
+						name TEXT NOT NULL
+					);
+					INSERT INTO items (name) VALUES ('alpha'), ('beta');
+				`)
+				registerSQLiteConnection(t, env, "query_conn", dbPath)
+				return `{"id":"query_conn","sql":"SELECT id, name FROM items ORDER BY id ASC"}`
+			},
+			wantStatus: http.StatusOK,
+			verify: func(t *testing.T, rec *httptest.ResponseRecorder) {
+				if got := rec.Header().Get("Content-Type"); got != "application/json" {
+					t.Fatalf("content-type = %q, want application/json", got)
+				}
 
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("expected status 500, got %d", rec.Code)
+				var results []map[string]any
+				if err := json.NewDecoder(rec.Body).Decode(&results); err != nil {
+					t.Fatalf("decode response: %v", err)
+				}
+				if len(results) != 2 || results[0]["name"] != "alpha" {
+					t.Fatalf("results = %+v, want two rows starting with alpha", results)
+				}
+			},
+		},
+		{
+			name:       "invalid json",
+			setup:      func(*testing.T, apiEnv) string { return "not-json" },
+			wantStatus: http.StatusBadRequest,
+			bodySubstr: "Invalid JSON structure payload",
+		},
+		{
+			name:       "missing id",
+			setup:      func(*testing.T, apiEnv) string { return `{"sql":"SELECT 1"}` },
+			wantStatus: http.StatusBadRequest,
+			bodySubstr: "Missing mandatory",
+		},
+		{
+			name:       "missing sql",
+			setup:      func(*testing.T, apiEnv) string { return `{"id":"conn1"}` },
+			wantStatus: http.StatusBadRequest,
+			bodySubstr: "Missing mandatory",
+		},
+		{
+			name:       "empty fields",
+			setup:      func(*testing.T, apiEnv) string { return `{"id":"","sql":""}` },
+			wantStatus: http.StatusBadRequest,
+			bodySubstr: "Missing mandatory",
+		},
+		{
+			name: "invalid sql",
+			setup: func(t *testing.T, env apiEnv) string {
+				dbPath := testutil.SeedSQLiteFile(t, `CREATE TABLE items (id INTEGER PRIMARY KEY);`)
+				registerSQLiteConnection(t, env, "query_conn", dbPath)
+				return `{"id":"query_conn","sql":"SELECT * FROM missing_table"}`
+			},
+			wantStatus: http.StatusInternalServerError,
+			bodySubstr: "error querying",
+		},
+		{
+			name:       "unknown connection",
+			setup:      func(*testing.T, apiEnv) string { return `{"id":"missing_conn","sql":"SELECT 1"}` },
+			wantStatus: http.StatusInternalServerError,
+			bodySubstr: "does not exist in registry",
+		},
 	}
-	if !strings.Contains(rec.Body.String(), "does not exist in registry") {
-		t.Errorf("expected unknown connection error, got %q", rec.Body.String())
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			env := newAPIEnv(t)
+			rec := doJSON(t, env.router, http.MethodPost, "/api/query", tt.setup(t, env))
+			assertStatus(t, rec, tt.wantStatus)
+
+			if tt.bodySubstr != "" {
+				assertBodyContains(t, rec, tt.bodySubstr)
+			}
+			if tt.verify != nil {
+				tt.verify(t, rec)
+			}
+		})
 	}
 }

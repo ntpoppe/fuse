@@ -1,173 +1,191 @@
 package connectionmanager_test
 
 import (
-	"context"
-	"database/sql"
-	"database/sql/driver"
-	"errors"
+	"strings"
 	"testing"
 
 	connectionmanager "github.com/ntpoppe/fuse/internal/connection_manager"
 	"github.com/ntpoppe/fuse/internal/registry"
+	"github.com/ntpoppe/fuse/internal/testutil"
 )
 
-type mockDriver struct{ failPing bool }
-type mockConn struct{ failPing bool }
-
-func (d *mockDriver) Open(name string) (driver.Conn, error) {
-	return &mockConn{failPing: d.failPing}, nil
+type env struct {
+	reg *registry.Registry
+	cm  *connectionmanager.ConnectionManager
 }
 
-// Implement Pinger interface to control db.PingContext behavior
-func (c *mockConn) Ping(ctx context.Context) error {
-	if c.failPing {
-		return errors.New("network destination unreachable")
-	}
-	return nil
-}
-
-// Minimal interface fulfillments required by database/sql
-func (c *mockConn) Prepare(query string) (driver.Stmt, error) { return nil, nil }
-func (c *mockConn) Close() error                              { return nil }
-func (c *mockConn) Begin() (driver.Tx, error)                 { return nil, nil }
-
-func TestRegisterNewConnection_Success(t *testing.T) {
-	// Register a unique "happy" driver name for this test execution
-	sql.Register("mock_healthy", &mockDriver{failPing: false})
-
+func newEnv(t *testing.T) env {
+	t.Helper()
 	reg := registry.NewRegistry()
-	cm := connectionmanager.NewConnectionManager(reg)
-
-	// Run registration pipeline
-	err := cm.RegisterConnection("db_1", "mock_healthy", "localhost:3306")
-	if err != nil {
-		t.Fatalf("expected successful registration, got error: %v", err)
-	}
-
-	// Confirm pool was successfully stored in the registry
-	_, found := reg.Fetch("db_1")
-	if !found {
-		t.Error("expected connection pool to be saved in the registry, but it was missing")
+	return env{
+		reg: reg,
+		cm:  connectionmanager.NewConnectionManager(reg),
 	}
 }
 
-func TestRegisterNewConnection_PingFailure(t *testing.T) {
-	// Register a unique "broken" driver that explicitly fails pings
-	sql.Register("mock_broken", &mockDriver{failPing: true})
+func TestConnectionManager_RegisterConnection(t *testing.T) {
+	t.Parallel()
 
-	reg := registry.NewRegistry()
-	cm := connectionmanager.NewConnectionManager(reg)
+	tests := []struct {
+		name      string
+		driver    func(t *testing.T) string
+		id        string
+		host      string
+		wantErr   bool
+		errSubstr string
+		wantSaved bool
+	}{
+		{
+			name: "success",
+			driver: func(t *testing.T) string {
+				return testutil.RegisterNamedMockDriver(t, "healthy", false)
+			},
+			id:        "db_1",
+			host:      "localhost:3306",
+			wantSaved: true,
+		},
+		{
+			name: "ping failure",
+			driver: func(t *testing.T) string {
+				return testutil.RegisterNamedMockDriver(t, "broken", true)
+			},
+			id:        "db_2",
+			host:      "localhost:1433",
+			wantErr:   true,
+			errSubstr: "failed to ping",
+		},
+		{
+			name:      "invalid driver",
+			driver:    func(*testing.T) string { return "non_existent_driver" },
+			id:        "db_3",
+			host:      "localhost:9999",
+			wantErr:   true,
+			errSubstr: "failed to open db conn",
+		},
+	}
 
-	// Verify that a failing ping bubbles up an error cleanly
-	err := cm.RegisterConnection("db_2", "mock_broken", "localhost:1433")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			e := newEnv(t)
+			driver := tt.driver(t)
+
+			err := e.cm.RegisterConnection(tt.id, driver, tt.host)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tt.errSubstr != "" && !strings.Contains(err.Error(), tt.errSubstr) {
+					t.Fatalf("error = %q, want substring %q", err.Error(), tt.errSubstr)
+				}
+			} else if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			_, found := e.reg.Fetch(tt.id)
+			if found != tt.wantSaved {
+				t.Fatalf("saved = %v, want %v", found, tt.wantSaved)
+			}
+		})
+	}
+}
+
+func TestConnectionManager_RegisterConnection_DuplicateID(t *testing.T) {
+	e := newEnv(t)
+	driver := testutil.RegisterNamedMockDriver(t, "duplicate", false)
+
+	if err := e.cm.RegisterConnection("db_1", driver, "localhost:3306"); err != nil {
+		t.Fatalf("first registration failed: %v", err)
+	}
+
+	err := e.cm.RegisterConnection("db_1", driver, "localhost:3306")
 	if err == nil {
-		t.Error("expected error due to network ping failure, got nil")
+		t.Fatal("expected duplicate registration error, got nil")
 	}
-
-	// Confirm nothing was cached in the registry
-	_, found := reg.Fetch("db_2")
-	if found {
-		t.Error("expected registry to be empty after a failed connection attempt, but found data")
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("error = %q, want duplicate id message", err.Error())
 	}
 }
 
-func TestRegisterNewConnection_InvalidDriver(t *testing.T) {
-	reg := registry.NewRegistry()
-	cm := connectionmanager.NewConnectionManager(reg)
+func TestConnectionManager_RemoveConnection(t *testing.T) {
+	t.Parallel()
 
-	// Verify sql.Open behavior when an unregistered string is provided
-	err := cm.RegisterConnection("db_3", "non_existent_driver", "localhost:9999")
-	if err == nil {
-		t.Error("expected error for unregistered driver string, got nil")
+	tests := []struct {
+		name    string
+		setup   func(t *testing.T, e env) string
+		wantErr bool
+	}{
+		{
+			name: "success",
+			setup: func(t *testing.T, e env) string {
+				t.Helper()
+				driver := testutil.RegisterNamedMockDriver(t, "removable", false)
+				id := "db_4"
+				if err := e.cm.RegisterConnection(id, driver, "localhost:3306"); err != nil {
+					t.Fatalf("register connection: %v", err)
+				}
+				return id
+			},
+		},
+		{
+			name: "not found",
+			setup: func(*testing.T, env) string {
+				return "missing_connection"
+			},
+			wantErr: true,
+		},
 	}
-}
 
-func TestRemoveConnection_Success(t *testing.T) {
-	sql.Register("mock_removable", &mockDriver{failPing: false})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	reg := registry.NewRegistry()
-	cm := connectionmanager.NewConnectionManager(reg)
+			e := newEnv(t)
+			id := tt.setup(t, e)
 
-	if err := cm.RegisterConnection("db_4", "mock_removable", "localhost:3306"); err != nil {
-		t.Fatalf("expected successful registration, got error: %v", err)
-	}
+			err := e.cm.RemoveConnection(id)
+			if tt.wantErr && err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
-	if err := cm.RemoveConnection("db_4"); err != nil {
-		t.Fatalf("expected successful removal, got error: %v", err)
-	}
-
-	_, found := reg.Fetch("db_4")
-	if found {
-		t.Error("expected connection to be removed from the registry, but it was still present")
-	}
-}
-
-func TestRemoveConnection_NotFound(t *testing.T) {
-	reg := registry.NewRegistry()
-	cm := connectionmanager.NewConnectionManager(reg)
-
-	err := cm.RemoveConnection("missing_connection")
-	if err == nil {
-		t.Fatal("expected error when removing a missing connection, got nil")
+			if !tt.wantErr {
+				if _, found := e.reg.Fetch(id); found {
+					t.Fatal("expected connection to be removed from registry")
+				}
+			}
+		})
 	}
 }
 
 func TestNormalizeHost(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		driver string
 		host   string
 		want   string
 	}{
-		{
-			name:   "sqlite plain path",
-			driver: "sqlite",
-			host:   "dev_target.db",
-			want:   "file:dev_target.db?mode=ro",
-		},
-		{
-			name:   "sqlite file prefix",
-			driver: "sqlite",
-			host:   "file:dev_target.db",
-			want:   "file:dev_target.db?mode=ro",
-		},
-		{
-			name:   "sqlite already read only",
-			driver: "sqlite",
-			host:   "file:dev_target.db?mode=ro",
-			want:   "file:dev_target.db?mode=ro",
-		},
-		{
-			name:   "sqlite plain path with existing mode suffix",
-			driver: "sqlite",
-			host:   "dev_target.db?mode=ro",
-			want:   "file:dev_target.db?mode=ro",
-		},
-		{
-			name:   "mysql passthrough",
-			driver: "mysql",
-			host:   "user:pass@tcp(localhost:3306)/mydb",
-			want:   "user:pass@tcp(localhost:3306)/mydb",
-		},
-		{
-			name:   "sql server passthrough",
-			driver: "sqlserver",
-			host:   "sqlserver://user:pass@localhost:1433?database=mydb",
-			want:   "sqlserver://user:pass@localhost:1433?database=mydb",
-		},
-		{
-			name:   "unknown driver passthrough",
-			driver: "postgres",
-			host:   "postgres://localhost/mydb",
-			want:   "postgres://localhost/mydb",
-		},
+		{name: "sqlite plain path", driver: "sqlite", host: "dev_target.db", want: "file:dev_target.db?mode=ro"},
+		{name: "sqlite file prefix", driver: "sqlite", host: "file:dev_target.db", want: "file:dev_target.db?mode=ro"},
+		{name: "sqlite already read only", driver: "sqlite", host: "file:dev_target.db?mode=ro", want: "file:dev_target.db?mode=ro"},
+		{name: "sqlite plain path with existing mode suffix", driver: "sqlite", host: "dev_target.db?mode=ro", want: "file:dev_target.db?mode=ro"},
+		{name: "mysql passthrough", driver: "mysql", host: "user:pass@tcp(localhost:3306)/mydb", want: "user:pass@tcp(localhost:3306)/mydb"},
+		{name: "sql server passthrough", driver: "sqlserver", host: "sqlserver://user:pass@localhost:1433?database=mydb", want: "sqlserver://user:pass@localhost:1433?database=mydb"},
+		{name: "unknown driver passthrough", driver: "postgres", host: "postgres://localhost/mydb", want: "postgres://localhost/mydb"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := connectionmanager.NormalizeHost(tt.driver, tt.host)
 			if got != tt.want {
-				t.Errorf("NormalizeHost(%q, %q) = %q, want %q", tt.driver, tt.host, got, tt.want)
+				t.Fatalf("NormalizeHost(%q, %q) = %q, want %q", tt.driver, tt.host, got, tt.want)
 			}
 		})
 	}

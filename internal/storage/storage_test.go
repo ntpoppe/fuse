@@ -1,93 +1,118 @@
 package storage_test
 
 import (
-	"context"
-	"database/sql"
 	"testing"
-	"time"
 
 	"github.com/ntpoppe/fuse/internal/storage"
-	_ "modernc.org/sqlite"
+	"github.com/ntpoppe/fuse/internal/testutil"
 )
 
-func TestStore_Lifecycle(t *testing.T) {
-	// Setup a completely fresh, isolated in-memory SQLite database for the test
-	db, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("failed to open test sqlite db: %v", err)
-	}
-	defer db.Close()
+func newStore(t *testing.T) (*storage.Store, *storage.SavedConnection) {
+	t.Helper()
 
-	// Instantiate the Repository Store using our test database pointer
-	store := storage.NewStore(db)
-
-	// Test Schema Initialization (Migration Pass)
+	store := storage.NewStore(testutil.OpenSQLiteMemory(t))
 	if err := store.InitializeSchema(); err != nil {
-		t.Fatalf("failed to initialize schema: %v", err)
+		t.Fatalf("initialize schema: %v", err)
 	}
 
-	// Create defensive context rules for our data modifications
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	// Test Insertion Pass (SaveConnection)
-	mockConn1 := storage.SavedConnection{
+	sample := &storage.SavedConnection{
 		ID:     "prod_mysql",
 		Driver: "mysql",
 		Host:   "root:secret@tcp(127.0.0.1:3306)/production",
 	}
-	mockConn2 := storage.SavedConnection{
-		ID:     "analytics_postgres",
-		Driver: "postgres",
-		Host:   "postgres://user:pass@localhost:5432/analytics",
-	}
+	return store, sample
+}
 
-	if err := store.SaveConnection(ctx, mockConn1); err != nil {
-		t.Errorf("failed to save mockConn1: %v", err)
+func saveConnection(t *testing.T, store *storage.Store, conn storage.SavedConnection) {
+	t.Helper()
+	if err := store.SaveConnection(testutil.Context(t), conn); err != nil {
+		t.Fatalf("save connection %q: %v", conn.ID, err)
 	}
-	if err := store.SaveConnection(ctx, mockConn2); err != nil {
-		t.Errorf("failed to save mockConn2: %v", err)
-	}
+}
 
-	// Test Query Pass (GetAllConnections)
-	connections, err := store.GetAllConnections(ctx)
+func getConnections(t *testing.T, store *storage.Store) []storage.SavedConnection {
+	t.Helper()
+
+	connections, err := store.GetAllConnections(testutil.Context(t))
 	if err != nil {
-		t.Fatalf("failed to fetch connections from disk: %v", err)
+		t.Fatalf("get connections: %v", err)
+	}
+	return connections
+}
+
+func TestStore_InitializeSchema(t *testing.T) {
+	store, _ := newStore(t)
+
+	if err := store.InitializeSchema(); err != nil {
+		t.Fatalf("re-run schema init: %v", err)
+	}
+}
+
+func TestStore_SaveConnection(t *testing.T) {
+	store, sample := newStore(t)
+	saveConnection(t, store, *sample)
+
+	connections := getConnections(t, store)
+	if len(connections) != 1 {
+		t.Fatalf("connection count = %d, want 1", len(connections))
+	}
+	if connections[0] != *sample {
+		t.Fatalf("saved connection = %+v, want %+v", connections[0], *sample)
+	}
+}
+
+func TestStore_GetAllConnections(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, store *storage.Store)
+		want  int
+	}{
+		{
+			name:  "empty store",
+			setup: func(*testing.T, *storage.Store) {},
+			want:  0,
+		},
+		{
+			name: "multiple connections",
+			setup: func(t *testing.T, store *storage.Store) {
+				saveConnection(t, store, storage.SavedConnection{
+					ID: "one", Driver: "mysql", Host: "host1",
+				})
+				saveConnection(t, store, storage.SavedConnection{
+					ID: "two", Driver: "sqlite", Host: "host2",
+				})
+			},
+			want: 2,
+		},
 	}
 
-	// Assertions: Validate that we got exactly 2 records back
-	if len(connections) != 2 {
-		t.Fatalf("expected 2 saved connections, got %d", len(connections))
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store, _ := newStore(t)
+			tt.setup(t, store)
 
-	// Assertions: Verify the records retain all original properties
-	foundMySQL := false
-	for _, c := range connections {
-		if c.ID == "prod_mysql" {
-			foundMySQL = true
-			if c.Driver != "mysql" || c.Host != mockConn1.Host {
-				t.Errorf("data mismatch for prod_mysql, got %+v", c)
+			if got := len(getConnections(t, store)); got != tt.want {
+				t.Fatalf("connection count = %d, want %d", got, tt.want)
 			}
-		}
+		})
 	}
+}
 
-	if !foundMySQL {
-		t.Error("expected to find 'prod_mysql' in the extracted records, but it was missing")
-	}
+func TestStore_SaveConnection_Upsert(t *testing.T) {
+	store, sample := newStore(t)
+	saveConnection(t, store, *sample)
 
-	// Test Item Overwrite Protection (INSERT OR REPLACE behavior)
-	updatedMySQL := storage.SavedConnection{
-		ID:     "prod_mysql",
-		Driver: "mysql",
-		Host:   "new_connection_string",
-	}
-	if err := store.SaveConnection(ctx, updatedMySQL); err != nil {
-		t.Fatalf("failed to update record: %v", err)
-	}
+	updated := *sample
+	updated.Host = "new_connection_string"
+	saveConnection(t, store, updated)
 
-	// Fetch again to verify update
-	connectionsAfterUpdate, _ := store.GetAllConnections(ctx)
-	if len(connectionsAfterUpdate) != 2 {
-		t.Errorf("row count shouldn't increase on duplicate keys, expected 2 rows but got %d", len(connectionsAfterUpdate))
+	connections := getConnections(t, store)
+	if len(connections) != 1 {
+		t.Fatalf("connection count = %d, want 1", len(connections))
+	}
+	if connections[0].Host != updated.Host {
+		t.Fatalf("host = %q, want %q", connections[0].Host, updated.Host)
 	}
 }
