@@ -50,9 +50,9 @@ func main() {
 	}
 
 	for _, p := range savedPools {
-		log.Printf("re-initializing connection tracking pool configuration for targets: %s", p.ID)
-		if err := cm.RegisterNewConnection(p.ID, p.Driver, p.Host); err != nil {
-			log.Printf("failed to re-warm engine connection pool for target %q: %v", p.ID, err)
+		log.Printf("registering connection pool for target %q", p.ID)
+		if err := cm.RegisterConnection(p.ID, p.Driver, p.Host); err != nil {
+			log.Printf("failed to register connection pool for target %q: %v", p.ID, err)
 		}
 	}
 

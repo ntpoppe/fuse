@@ -44,6 +44,32 @@ func TestRegistry_FetchMissingKey(t *testing.T) {
 	}
 }
 
+func TestRegistry_Delete(t *testing.T) {
+	reg := registry.NewRegistry()
+	mockDB := &sql.DB{}
+	key := "postgres_staging"
+
+	reg.Save(key, mockDB)
+
+	reg.Delete(key)
+
+	_, found := reg.Fetch(key)
+	if found {
+		t.Errorf("expected key %q to be missing after delete, but it was found", key)
+	}
+}
+
+func TestRegistry_DeleteMissingKey(t *testing.T) {
+	reg := registry.NewRegistry()
+
+	reg.Delete("non_existent_connection")
+
+	_, found := reg.Fetch("non_existent_connection")
+	if found {
+		t.Error("expected delete of missing key to be a no-op, but key was found")
+	}
+}
+
 func TestRegistry_ConcurrencyRaceCondition(t *testing.T) {
 	reg := registry.NewRegistry()
 	mockDB := &sql.DB{}

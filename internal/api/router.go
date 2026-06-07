@@ -66,7 +66,7 @@ func (h *Handler) PostConnections(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.cm.RegisterNewConnection(payload.ID, payload.Driver, payload.Host); err != nil {
+	if err := h.cm.RegisterConnection(payload.ID, payload.Driver, payload.Host); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

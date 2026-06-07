@@ -17,7 +17,7 @@ func NewConnectionManager(reg *registry.Registry) *ConnectionManager {
 	return &ConnectionManager{reg}
 }
 
-func (cm *ConnectionManager) RegisterNewConnection(id string, driver string, host string) error {
+func (cm *ConnectionManager) RegisterConnection(id string, driver string, host string) error {
 	db, openErr := sql.Open(driver, host)
 	if openErr != nil {
 		return fmt.Errorf("failed to open db conn for driver %q and host %q", driver, host)
@@ -32,5 +32,16 @@ func (cm *ConnectionManager) RegisterNewConnection(id string, driver string, hos
 	}
 
 	cm.reg.Save(id, db)
+	return nil
+}
+
+func (cm *ConnectionManager) RemoveConnection(id string) error {
+	db, exists := cm.reg.Fetch(id)
+	if !exists {
+		return fmt.Errorf("connection pool for %q does not exist", id)
+	}
+
+	db.Close()
+	cm.reg.Delete(id)
 	return nil
 }

@@ -39,7 +39,7 @@ func TestRegisterNewConnection_Success(t *testing.T) {
 	cm := connectionmanager.NewConnectionManager(reg)
 
 	// Run registration pipeline
-	err := cm.RegisterNewConnection("db_1", "mock_healthy", "localhost:3306")
+	err := cm.RegisterConnection("db_1", "mock_healthy", "localhost:3306")
 	if err != nil {
 		t.Fatalf("expected successful registration, got error: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestRegisterNewConnection_PingFailure(t *testing.T) {
 	cm := connectionmanager.NewConnectionManager(reg)
 
 	// Verify that a failing ping bubbles up an error cleanly
-	err := cm.RegisterNewConnection("db_2", "mock_broken", "localhost:1433")
+	err := cm.RegisterConnection("db_2", "mock_broken", "localhost:1433")
 	if err == nil {
 		t.Error("expected error due to network ping failure, got nil")
 	}
@@ -76,8 +76,38 @@ func TestRegisterNewConnection_InvalidDriver(t *testing.T) {
 	cm := connectionmanager.NewConnectionManager(reg)
 
 	// Verify sql.Open behavior when an unregistered string is provided
-	err := cm.RegisterNewConnection("db_3", "non_existent_driver", "localhost:9999")
+	err := cm.RegisterConnection("db_3", "non_existent_driver", "localhost:9999")
 	if err == nil {
 		t.Error("expected error for unregistered driver string, got nil")
+	}
+}
+
+func TestRemoveConnection_Success(t *testing.T) {
+	sql.Register("mock_removable", &mockDriver{failPing: false})
+
+	reg := registry.NewRegistry()
+	cm := connectionmanager.NewConnectionManager(reg)
+
+	if err := cm.RegisterConnection("db_4", "mock_removable", "localhost:3306"); err != nil {
+		t.Fatalf("expected successful registration, got error: %v", err)
+	}
+
+	if err := cm.RemoveConnection("db_4"); err != nil {
+		t.Fatalf("expected successful removal, got error: %v", err)
+	}
+
+	_, found := reg.Fetch("db_4")
+	if found {
+		t.Error("expected connection to be removed from the registry, but it was still present")
+	}
+}
+
+func TestRemoveConnection_NotFound(t *testing.T) {
+	reg := registry.NewRegistry()
+	cm := connectionmanager.NewConnectionManager(reg)
+
+	err := cm.RemoveConnection("missing_connection")
+	if err == nil {
+		t.Fatal("expected error when removing a missing connection, got nil")
 	}
 }

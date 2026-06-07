@@ -30,3 +30,7 @@ func (r *Registry) Save(key string, val *sql.DB) {
 
 	r.cache[key] = val
 }
+
+func (r *Registry) Delete(key string) {
+	delete(r.cache, key)
+}
