@@ -10,6 +10,7 @@ import (
 
 	"github.com/ntpoppe/fuse/internal/api"
 	connectionmanager "github.com/ntpoppe/fuse/internal/connection_manager"
+	"github.com/ntpoppe/fuse/internal/driver"
 	"github.com/ntpoppe/fuse/internal/executor"
 	"github.com/ntpoppe/fuse/internal/registry"
 	"github.com/ntpoppe/fuse/internal/storage"
@@ -71,7 +72,7 @@ func doJSON(t *testing.T, handler http.Handler, method, path string, payload any
 		}
 	}
 
-	return doRequest(t, handler, method, path, body, "application/json")
+	return doRequest(t, handler, method, path, body, api.ContentTypeJSON)
 }
 
 func assertStatus(t *testing.T, rec *httptest.ResponseRecorder, want int) {
@@ -92,9 +93,9 @@ func assertBodyContains(t *testing.T, rec *httptest.ResponseRecorder, want strin
 func registerSQLiteConnection(t *testing.T, env apiEnv, id, dbPath string) {
 	t.Helper()
 
-	rec := doJSON(t, env.router, http.MethodPost, "/api/connections", map[string]string{
+	rec := doJSON(t, env.router, http.MethodPost, api.PathConnections, map[string]string{
 		"id":     id,
-		"driver": "sqlite",
+		"driver": driver.DriverSQLite,
 		"host":   dbPath,
 	})
 	assertStatus(t, rec, http.StatusCreated)
@@ -110,12 +111,12 @@ func TestHandler_Health(t *testing.T) {
 	t.Parallel()
 
 	env := newAPIEnv(t)
-	rec := doRequest(t, env.router, http.MethodGet, "/health", nil, "")
+	rec := doRequest(t, env.router, http.MethodGet, api.PathHealth, nil, "")
 
 	assertStatus(t, rec, http.StatusOK)
 
-	if got := rec.Header().Get("Content-Type"); got != "application/json" {
-		t.Fatalf("content-type = %q, want application/json", got)
+	if got := rec.Header().Get("Content-Type"); got != api.ContentTypeJSON {
+		t.Fatalf("content-type = %q, want %s", got, api.ContentTypeJSON)
 	}
 
 	var body map[string]string
@@ -160,7 +161,7 @@ func TestHandler_PostConnection(t *testing.T) {
 			name:       "invalid json",
 			setup:      func(*testing.T, apiEnv) any { return "{invalid" },
 			wantStatus: http.StatusBadRequest,
-			bodySubstr: "Invalid JSON structure payload",
+			bodySubstr: "invalid JSON payload",
 		},
 		{
 			name: "invalid driver",
@@ -180,7 +181,7 @@ func TestHandler_PostConnection(t *testing.T) {
 				}
 			},
 			wantStatus: http.StatusBadRequest,
-			bodySubstr: "failed to ping",
+			bodySubstr: "ping connection",
 		},
 	}
 
@@ -189,7 +190,7 @@ func TestHandler_PostConnection(t *testing.T) {
 			t.Parallel()
 
 			env := newAPIEnv(t)
-			rec := doJSON(t, env.router, http.MethodPost, "/api/connections", tt.setup(t, env))
+			rec := doJSON(t, env.router, http.MethodPost, api.PathConnections, tt.setup(t, env))
 			assertStatus(t, rec, tt.wantStatus)
 
 			if tt.bodySubstr != "" {
@@ -209,10 +210,10 @@ func TestHandler_PostConnection_DuplicateID(t *testing.T) {
 		"id": "conn1", "driver": driver, "host": "localhost:3306",
 	}
 
-	rec := doJSON(t, env.router, http.MethodPost, "/api/connections", payload)
+	rec := doJSON(t, env.router, http.MethodPost, api.PathConnections, payload)
 	assertStatus(t, rec, http.StatusCreated)
 
-	rec = doJSON(t, env.router, http.MethodPost, "/api/connections", payload)
+	rec = doJSON(t, env.router, http.MethodPost, api.PathConnections, payload)
 	assertStatus(t, rec, http.StatusBadRequest)
 	assertBodyContains(t, rec, "already exists")
 }
@@ -221,7 +222,7 @@ func registerMockConnection(t *testing.T, env apiEnv, id string) {
 	t.Helper()
 
 	driver := testutil.RegisterNamedMockDriver(t, "conn", false)
-	rec := doJSON(t, env.router, http.MethodPost, "/api/connections", map[string]string{
+	rec := doJSON(t, env.router, http.MethodPost, api.PathConnections, map[string]string{
 		"id": id, "driver": driver, "host": "localhost:3306",
 	})
 	assertStatus(t, rec, http.StatusCreated)
@@ -263,7 +264,7 @@ func TestHandler_DeleteConnection(t *testing.T) {
 			name:       "unknown connection",
 			setup:      func(*testing.T, apiEnv) string { return "missing" },
 			wantStatus: http.StatusNotFound,
-			bodySubstr: "does not exist",
+			bodySubstr: "not found",
 		},
 	}
 
@@ -274,7 +275,7 @@ func TestHandler_DeleteConnection(t *testing.T) {
 			env := newAPIEnv(t)
 			id := tt.setup(t, env)
 
-			rec := doRequest(t, env.router, http.MethodDelete, "/api/connections/"+id, nil, "")
+			rec := doRequest(t, env.router, http.MethodDelete, api.PathConnections+"/"+id, nil, "")
 			assertStatus(t, rec, tt.wantStatus)
 
 			if tt.bodySubstr != "" {
@@ -329,25 +330,25 @@ func TestHandler_PostQuery(t *testing.T) {
 			name:       "invalid json",
 			setup:      func(*testing.T, apiEnv) string { return "not-json" },
 			wantStatus: http.StatusBadRequest,
-			bodySubstr: "Invalid JSON structure payload",
+			bodySubstr: "invalid JSON payload",
 		},
 		{
 			name:       "missing id",
 			setup:      func(*testing.T, apiEnv) string { return `{"sql":"SELECT 1"}` },
 			wantStatus: http.StatusBadRequest,
-			bodySubstr: "Missing mandatory",
+			bodySubstr: "missing required fields",
 		},
 		{
 			name:       "missing sql",
 			setup:      func(*testing.T, apiEnv) string { return `{"id":"conn1"}` },
 			wantStatus: http.StatusBadRequest,
-			bodySubstr: "Missing mandatory",
+			bodySubstr: "missing required fields",
 		},
 		{
 			name:       "empty fields",
 			setup:      func(*testing.T, apiEnv) string { return `{"id":"","sql":""}` },
 			wantStatus: http.StatusBadRequest,
-			bodySubstr: "Missing mandatory",
+			bodySubstr: "missing required fields",
 		},
 		{
 			name: "invalid sql",
@@ -362,8 +363,8 @@ func TestHandler_PostQuery(t *testing.T) {
 		{
 			name:       "unknown connection",
 			setup:      func(*testing.T, apiEnv) string { return `{"id":"missing_conn","sql":"SELECT 1"}` },
-			wantStatus: http.StatusInternalServerError,
-			bodySubstr: "does not exist in registry",
+			wantStatus: http.StatusNotFound,
+			bodySubstr: "not found",
 		},
 	}
 
@@ -372,7 +373,7 @@ func TestHandler_PostQuery(t *testing.T) {
 			t.Parallel()
 
 			env := newAPIEnv(t)
-			rec := doJSON(t, env.router, http.MethodPost, "/api/query", tt.setup(t, env))
+			rec := doJSON(t, env.router, http.MethodPost, api.PathQuery, tt.setup(t, env))
 			assertStatus(t, rec, tt.wantStatus)
 
 			if tt.bodySubstr != "" {

@@ -1,22 +1,23 @@
 package registry
 
 import (
-	"database/sql"
 	"sync"
+
+	"github.com/ntpoppe/fuse/internal/driver"
 )
 
 type Registry struct {
 	mu    sync.RWMutex
-	cache map[string]*sql.DB
+	cache map[string]driver.Target
 }
 
 func NewRegistry() *Registry {
-	cache := make(map[string]*sql.DB)
-	registry := Registry{cache: cache}
-	return &registry
+	return &Registry{
+		cache: make(map[string]driver.Target),
+	}
 }
 
-func (r *Registry) Fetch(key string) (*sql.DB, bool) {
+func (r *Registry) Fetch(key string) (driver.Target, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -24,7 +25,7 @@ func (r *Registry) Fetch(key string) (*sql.DB, bool) {
 	return val, exists
 }
 
-func (r *Registry) Save(key string, val *sql.DB) {
+func (r *Registry) Save(key string, val driver.Target) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

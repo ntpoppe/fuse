@@ -1,2 +1,3 @@
 # fuse
-a cross-db federation desktop application
+
+cross-db read-only query layer.

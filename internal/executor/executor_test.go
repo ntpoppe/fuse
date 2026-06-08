@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ntpoppe/fuse/internal/driver"
 	"github.com/ntpoppe/fuse/internal/executor"
 	"github.com/ntpoppe/fuse/internal/registry"
 	"github.com/ntpoppe/fuse/internal/testutil"
@@ -21,15 +22,16 @@ INSERT INTO mock_users (username, is_admin) VALUES ('nate', 1), ('guest', 0);
 func newExecutor(t *testing.T) (*executor.Executor, string) {
 	t.Helper()
 
-	db := testutil.OpenSQLiteMemory(t)
-	if _, err := db.Exec(usersDDL); err != nil {
-		t.Fatalf("seed database: %v", err)
-	}
-
+	path := testutil.SeedSQLiteFile(t, usersDDL)
 	reg := registry.NewRegistry()
 	id := "test_sqlite_pool"
-	reg.Save(id, db)
+	target, err := driver.OpenTarget(id, driver.DriverSQLite, path)
+	if err != nil {
+		t.Fatalf("open target: %v", err)
+	}
+	t.Cleanup(func() { _ = target.Close() })
 
+	reg.Save(id, target)
 	return executor.NewExecutor(reg), id
 }
 
@@ -67,7 +69,7 @@ func TestExecutor_ExecuteQuery(t *testing.T) {
 				return executor.NewExecutor(registry.NewRegistry()), "invalid_lookup_id", "SELECT * FROM mock_users"
 			},
 			wantErr:   true,
-			errSubstr: "does not exist in registry",
+			errSubstr: "not found",
 		},
 		{
 			name: "invalid sql",
@@ -77,6 +79,33 @@ func TestExecutor_ExecuteQuery(t *testing.T) {
 			},
 			wantErr:   true,
 			errSubstr: "error querying",
+		},
+		{
+			name: "delete rejected before execution",
+			setup: func(t *testing.T) (*executor.Executor, string, string) {
+				exec, id := newExecutor(t)
+				return exec, id, "DELETE FROM mock_users"
+			},
+			wantErr:   true,
+			errSubstr: "read-only violation",
+		},
+		{
+			name: "multi statement rejected before execution",
+			setup: func(t *testing.T) (*executor.Executor, string, string) {
+				exec, id := newExecutor(t)
+				return exec, id, "SELECT 1; DELETE FROM mock_users"
+			},
+			wantErr:   true,
+			errSubstr: "read-only violation",
+		},
+		{
+			name: "modifying cte rejected before execution",
+			setup: func(t *testing.T) (*executor.Executor, string, string) {
+				exec, id := newExecutor(t)
+				return exec, id, "WITH deleted AS (DELETE FROM mock_users RETURNING *) SELECT * FROM deleted"
+			},
+			wantErr:   true,
+			errSubstr: "read-only violation",
 		},
 	}
 

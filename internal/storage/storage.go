@@ -21,46 +21,39 @@ func NewStore(db *sql.DB) *Store {
 }
 
 func (s *Store) InitializeSchema() error {
-	query := `
-	CREATE TABLE IF NOT EXISTS saved_connections (
-		id TEXT PRIMARY KEY,
-		driver TEXT NOT NULL,
-		host TEXT NOT NULL
-	);`
-
-	_, err := s.db.Exec(query)
+	_, err := s.db.Exec(schemaConnectionsCreate)
 	if err != nil {
-		return fmt.Errorf("failed to process local configuration migration schema: %w", err)
+		return fmt.Errorf("initialize schema: %w", err)
 	}
 	return nil
 }
 
 func (s *Store) SaveConnection(ctx context.Context, conn SavedConnection) error {
-	query := `INSERT OR REPLACE INTO saved_connections (id, driver, host) VALUES (?, ?, ?);`
+	query := fmt.Sprintf("INSERT OR REPLACE INTO %s (id, driver, host) VALUES (?, ?, ?);", connectionsTable)
 
 	_, err := s.db.ExecContext(ctx, query, conn.ID, conn.Driver, conn.Host)
 	if err != nil {
-		return fmt.Errorf("failed to save configuration parameters to local store file: %w", err)
+		return fmt.Errorf("save connection %q: %w", conn.ID, err)
 	}
 	return nil
 }
 
 func (s *Store) RemoveConnection(ctx context.Context, id string) error {
-	query := `DELETE FROM saved_connections WHERE id = ?;`
+	query := fmt.Sprintf("DELETE FROM %s WHERE id = ?;", connectionsTable)
 
 	_, err := s.db.ExecContext(ctx, query, id)
 	if err != nil {
-		return fmt.Errorf("failed to remove connection from local store file: %w", err)
+		return fmt.Errorf("remove connection %q: %w", id, err)
 	}
 	return nil
 }
 
 func (s *Store) GetAllConnections(ctx context.Context) ([]SavedConnection, error) {
-	query := `SELECT id, driver, host FROM saved_connections;`
+	query := fmt.Sprintf("SELECT id, driver, host FROM %s;", connectionsTable)
 
 	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to look up saved configuration rows: %w", err)
+		return nil, fmt.Errorf("list connections: %w", err)
 	}
 	defer rows.Close()
 
@@ -68,13 +61,13 @@ func (s *Store) GetAllConnections(ctx context.Context) ([]SavedConnection, error
 	for rows.Next() {
 		var conn SavedConnection
 		if err := rows.Scan(&conn.ID, &conn.Driver, &conn.Host); err != nil {
-			return nil, fmt.Errorf("failed to deserialize connection tracking record: %w", err)
+			return nil, fmt.Errorf("scan connection row: %w", err)
 		}
 		connections = append(connections, conn)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("row stream encountered mid-flight failure: %w", err)
+		return nil, fmt.Errorf("iterate connection rows: %w", err)
 	}
 
 	return connections, nil

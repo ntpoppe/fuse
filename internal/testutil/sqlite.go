@@ -5,13 +5,14 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/ntpoppe/fuse/internal/driver"
 	_ "modernc.org/sqlite"
 )
 
 func OpenSQLiteMemory(t *testing.T) *sql.DB {
 	t.Helper()
 
-	db, err := sql.Open("sqlite", ":memory:")
+	db, err := sql.Open(driver.DriverSQLite, ":memory:")
 	if err != nil {
 		t.Fatalf("open in-memory sqlite: %v", err)
 	}
@@ -23,7 +24,7 @@ func SeedSQLiteFile(t *testing.T, ddl string) string {
 	t.Helper()
 
 	path := filepath.Join(t.TempDir(), "target.db")
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open(driver.DriverSQLite, path)
 	if err != nil {
 		t.Fatalf("open seed sqlite file: %v", err)
 	}

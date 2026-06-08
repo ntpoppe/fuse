@@ -1,12 +1,12 @@
 package registry_test
 
 import (
-	"database/sql"
 	"strconv"
 	"sync"
 	"testing"
 
 	"github.com/ntpoppe/fuse/internal/registry"
+	"github.com/ntpoppe/fuse/internal/testutil"
 )
 
 func newRegistry(t *testing.T) *registry.Registry {
@@ -32,7 +32,7 @@ func TestRegistry_Fetch(t *testing.T) {
 			name: "existing key",
 			key:  "mysql_production",
 			setup: func(reg *registry.Registry, key string) {
-				reg.Save(key, &sql.DB{})
+				reg.Save(key, testutil.NewStubTarget(key))
 			},
 			wantFound: true,
 		},
@@ -57,17 +57,17 @@ func TestRegistry_Fetch(t *testing.T) {
 
 func TestRegistry_SaveAndFetchPointer(t *testing.T) {
 	reg := newRegistry(t)
-	mockDB := &sql.DB{}
+	target := testutil.NewStubTarget("mysql_production")
 	key := "mysql_production"
 
-	reg.Save(key, mockDB)
+	reg.Save(key, target)
 
 	got, found := reg.Fetch(key)
 	if !found {
 		t.Fatal("expected saved key to be found")
 	}
-	if got != mockDB {
-		t.Fatal("fetched pointer does not match saved pointer")
+	if got != target {
+		t.Fatal("fetched target does not match saved target")
 	}
 }
 
@@ -83,7 +83,7 @@ func TestRegistry_Delete(t *testing.T) {
 			name: "delete existing key",
 			setup: func(reg *registry.Registry) string {
 				key := "postgres_staging"
-				reg.Save(key, &sql.DB{})
+				reg.Save(key, testutil.NewStubTarget(key))
 				reg.Delete(key)
 				return key
 			},
@@ -117,7 +117,7 @@ func TestRegistry_Delete(t *testing.T) {
 
 func TestRegistry_Concurrency(t *testing.T) {
 	reg := newRegistry(t)
-	mockDB := &sql.DB{}
+	target := testutil.NewStubTarget("worker")
 
 	const workers = 50
 	const iterations = 100
@@ -131,7 +131,7 @@ func TestRegistry_Concurrency(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for range iterations {
-				reg.Save(workerID, mockDB)
+				reg.Save(workerID, target)
 			}
 		}()
 

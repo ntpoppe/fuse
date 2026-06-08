@@ -2,16 +2,21 @@ package config
 
 import (
 	"fmt"
+
+	"github.com/ntpoppe/fuse/internal/storage"
 )
 
+const DefaultPort = 5000
+
 type Config struct {
-	Port int
-	Env  string
+	Port        int
+	StateDBPath string
 }
 
 func NewConfig() *Config {
-	config := Config{}
-	return &config
+	return &Config{
+		StateDBPath: storage.DefaultStateDBPath,
+	}
 }
 
 func (c *Config) Validate() error {
@@ -20,12 +25,11 @@ func (c *Config) Validate() error {
 	}
 
 	if c.Port < 1024 {
-		fmt.Printf("Warning: Port %d is a privileged port; root access may be required\n", c.Port)
+		fmt.Printf("warning: port %d is privileged; root access may be required\n", c.Port)
 	}
 
-	allowedEnvs := map[string]bool{"dev": true, "prod": true}
-	if !allowedEnvs[c.Env] {
-		return fmt.Errorf("invalid environment %q: must be 'dev', 'prod'", c.Env)
+	if c.StateDBPath == "" {
+		return fmt.Errorf("state database path must not be empty")
 	}
 
 	return nil

@@ -15,53 +15,62 @@ import (
 	"github.com/ntpoppe/fuse/internal/api"
 	"github.com/ntpoppe/fuse/internal/config"
 	connectionmanager "github.com/ntpoppe/fuse/internal/connection_manager"
+	"github.com/ntpoppe/fuse/internal/driver"
 	"github.com/ntpoppe/fuse/internal/executor"
 	"github.com/ntpoppe/fuse/internal/registry"
 	"github.com/ntpoppe/fuse/internal/storage"
 )
 
-func main() {
-	config := config.NewConfig()
-	parseFlags(config)
+const (
+	serverReadTimeout  = 5 * time.Second
+	serverWriteTimeout = 10 * time.Second
+	serverIdleTimeout  = 120 * time.Second
+	shutdownTimeout    = 30 * time.Second
+	restoreTimeout     = 5 * time.Second
+)
 
-	stateDB, err := sql.Open("sqlite", "fuse.db")
+func main() {
+	cfg := config.NewConfig()
+	parseFlags(cfg)
+
+	stateDB, err := sql.Open(driver.DriverSQLite, cfg.StateDBPath)
 	if err != nil {
-		log.Fatalf("failed to open local state store file database: %v", err)
+		log.Fatalf("open state database: %v", err)
 	}
 	defer stateDB.Close()
 
 	store := storage.NewStore(stateDB)
 	if err := store.InitializeSchema(); err != nil {
-		log.Fatalf("failed to verify schema migrations on local state database: %v", err)
+		log.Fatalf("initialize state database: %v", err)
 	}
 
 	reg := registry.NewRegistry()
 	cm := connectionmanager.NewConnectionManager(reg)
 	exec := executor.NewExecutor(reg)
 
-	initCtx, initCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	initCtx, initCancel := context.WithTimeout(context.Background(), restoreTimeout)
 	defer initCancel()
 
-	savedPools, err := store.GetAllConnections(initCtx)
+	saved, err := store.GetAllConnections(initCtx)
 	if err != nil {
-		log.Printf("warning: failed to restore historical database targets configuration: %v", err)
+		log.Printf("warning: restore saved connections: %v", err)
 	}
 
-	for _, p := range savedPools {
-		log.Printf("registering connection pool for target %q with driver %q and host %q", p.ID, p.Driver, p.Host)
-		if err := cm.RegisterConnection(p.ID, p.Driver, p.Host); err != nil {
-			log.Printf("failed to register connection pool for target %q: %v", p.ID, err)
+	for _, conn := range saved {
+		log.Printf("restoring connection %q (driver=%q)", conn.ID, conn.Driver)
+		if err := cm.RegisterConnection(conn.ID, conn.Driver, conn.Host); err != nil {
+			log.Printf("failed to restore connection %q: %v", conn.ID, err)
 		}
 	}
 
 	router := api.NewRouter(cm, store, exec)
 
 	server := &http.Server{
-		Addr:         fmt.Sprintf(":%d", config.Port),
+		Addr:         fmt.Sprintf(":%d", cfg.Port),
 		Handler:      router,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		ReadTimeout:  serverReadTimeout,
+		WriteTimeout: serverWriteTimeout,
+		IdleTimeout:  serverIdleTimeout,
 	}
 
 	go func() {
@@ -77,27 +86,24 @@ func main() {
 	<-quit
 	fmt.Println("shutting down server...")
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("server forced to shutdown, missed deadline: %v\n", err)
+		log.Fatalf("server forced to shutdown: %v\n", err)
 	}
 
 	fmt.Println("server exiting")
 }
 
-func parseFlags(config *config.Config) {
-	flag.IntVar(&config.Port, "port", 5000, "port to listen on")
-	flag.StringVar(&config.Env, "env", "dev", "environment to run on")
+func parseFlags(cfg *config.Config) {
+	flag.IntVar(&cfg.Port, "port", config.DefaultPort, "port to listen on")
+	flag.StringVar(&cfg.StateDBPath, "state-db", cfg.StateDBPath, "path to local state database")
 
 	flag.Parse()
 
-	if err := config.Validate(); err != nil {
+	if err := cfg.Validate(); err != nil {
 		fmt.Fprintf(os.Stderr, "configuration error: %v\n", err)
 		os.Exit(1)
 	}
-
-	fmt.Println("port: ", config.Port)
-	fmt.Println("env: ", config.Env)
 }

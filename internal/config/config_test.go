@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/ntpoppe/fuse/internal/config"
+	"github.com/ntpoppe/fuse/internal/storage"
 )
 
 func TestConfig_Validate(t *testing.T) {
@@ -15,30 +16,26 @@ func TestConfig_Validate(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "valid dev config",
-			cfg:  config.Config{Port: 8080, Env: "dev"},
-		},
-		{
-			name: "valid prod config",
-			cfg:  config.Config{Port: 8080, Env: "prod"},
+			name: "valid config",
+			cfg:  config.Config{Port: 8080, StateDBPath: storage.DefaultStateDBPath},
 		},
 		{
 			name: "privileged port allowed",
-			cfg:  config.Config{Port: 80, Env: "dev"},
+			cfg:  config.Config{Port: 80, StateDBPath: storage.DefaultStateDBPath},
 		},
 		{
 			name:    "port too low",
-			cfg:     config.Config{Port: 0, Env: "dev"},
+			cfg:     config.Config{Port: 0, StateDBPath: storage.DefaultStateDBPath},
 			wantErr: true,
 		},
 		{
 			name:    "port too high",
-			cfg:     config.Config{Port: 99999, Env: "dev"},
+			cfg:     config.Config{Port: 99999, StateDBPath: storage.DefaultStateDBPath},
 			wantErr: true,
 		},
 		{
-			name:    "invalid environment",
-			cfg:     config.Config{Port: 8080, Env: "staging"},
+			name:    "empty state db path",
+			cfg:     config.Config{Port: 8080, StateDBPath: ""},
 			wantErr: true,
 		},
 	}
