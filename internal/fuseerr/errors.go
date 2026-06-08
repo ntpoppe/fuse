@@ -6,8 +6,9 @@ import (
 )
 
 var (
-	ErrNotFound      = errors.New("connection not found")
-	ErrAlreadyExists = errors.New("connection already exists")
+	ErrNotFound         = errors.New("connection not found")
+	ErrAlreadyExists    = errors.New("connection already exists")
+	ErrQueryRowLimit    = errors.New("query row limit exceeded")
 )
 
 type NotFoundError struct {
@@ -32,4 +33,16 @@ func (e AlreadyExistsError) Error() string {
 
 func (e AlreadyExistsError) Is(target error) bool {
 	return target == ErrAlreadyExists
+}
+
+type QueryRowLimitError struct {
+	Limit int
+}
+
+func (e QueryRowLimitError) Error() string {
+	return fmt.Sprintf("query returned more than %d rows", e.Limit)
+}
+
+func (e QueryRowLimitError) Is(target error) bool {
+	return target == ErrQueryRowLimit
 }

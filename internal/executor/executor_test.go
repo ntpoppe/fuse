@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ntpoppe/fuse/internal/config"
 	"github.com/ntpoppe/fuse/internal/driver"
 	"github.com/ntpoppe/fuse/internal/executor"
 	"github.com/ntpoppe/fuse/internal/registry"
@@ -32,7 +33,7 @@ func newExecutor(t *testing.T) (*executor.Executor, string) {
 	t.Cleanup(func() { _ = target.Close() })
 
 	reg.Save(id, target)
-	return executor.NewExecutor(reg), id
+	return executor.NewExecutor(reg, config.DefaultMaxQueryRows), id
 }
 
 func TestExecutor_ExecuteQuery(t *testing.T) {
@@ -66,7 +67,7 @@ func TestExecutor_ExecuteQuery(t *testing.T) {
 		{
 			name: "missing connection id",
 			setup: func(*testing.T) (*executor.Executor, string, string) {
-				return executor.NewExecutor(registry.NewRegistry()), "invalid_lookup_id", "SELECT * FROM mock_users"
+				return executor.NewExecutor(registry.NewRegistry(), config.DefaultMaxQueryRows), "invalid_lookup_id", "SELECT * FROM mock_users"
 			},
 			wantErr:   true,
 			errSubstr: "not found",
@@ -78,7 +79,7 @@ func TestExecutor_ExecuteQuery(t *testing.T) {
 				return exec, id, "SELECT * FROM missing_table"
 			},
 			wantErr:   true,
-			errSubstr: "error querying",
+			errSubstr: "query:",
 		},
 		{
 			name: "delete rejected before execution",

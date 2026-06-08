@@ -17,25 +17,54 @@ func TestConfig_Validate(t *testing.T) {
 	}{
 		{
 			name: "valid config",
-			cfg:  config.Config{Port: 8080, StateDBPath: storage.DefaultStateDBPath},
+			cfg: config.Config{
+				Port:         8080,
+				StateDBPath:  storage.DefaultStateDBPath,
+				MaxQueryRows: config.DefaultMaxQueryRows,
+			},
 		},
 		{
 			name: "privileged port allowed",
-			cfg:  config.Config{Port: 80, StateDBPath: storage.DefaultStateDBPath},
+			cfg: config.Config{
+				Port:         80,
+				StateDBPath:  storage.DefaultStateDBPath,
+				MaxQueryRows: config.DefaultMaxQueryRows,
+			},
 		},
 		{
-			name:    "port too low",
-			cfg:     config.Config{Port: 0, StateDBPath: storage.DefaultStateDBPath},
+			name: "port too low",
+			cfg: config.Config{
+				Port:         0,
+				StateDBPath:  storage.DefaultStateDBPath,
+				MaxQueryRows: config.DefaultMaxQueryRows,
+			},
 			wantErr: true,
 		},
 		{
-			name:    "port too high",
-			cfg:     config.Config{Port: 99999, StateDBPath: storage.DefaultStateDBPath},
+			name: "port too high",
+			cfg: config.Config{
+				Port:         99999,
+				StateDBPath:  storage.DefaultStateDBPath,
+				MaxQueryRows: config.DefaultMaxQueryRows,
+			},
 			wantErr: true,
 		},
 		{
-			name:    "empty state db path",
-			cfg:     config.Config{Port: 8080, StateDBPath: ""},
+			name: "empty state db path",
+			cfg: config.Config{
+				Port:         8080,
+				StateDBPath:  "",
+				MaxQueryRows: config.DefaultMaxQueryRows,
+			},
+			wantErr: true,
+		},
+		{
+			name: "max query rows too low",
+			cfg: config.Config{
+				Port:         8080,
+				StateDBPath:  storage.DefaultStateDBPath,
+				MaxQueryRows: 0,
+			},
 			wantErr: true,
 		},
 	}

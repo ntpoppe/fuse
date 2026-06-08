@@ -10,6 +10,7 @@ import (
 
 	"github.com/ntpoppe/fuse/internal/api"
 	connectionmanager "github.com/ntpoppe/fuse/internal/connection_manager"
+	"github.com/ntpoppe/fuse/internal/config"
 	"github.com/ntpoppe/fuse/internal/driver"
 	"github.com/ntpoppe/fuse/internal/executor"
 	"github.com/ntpoppe/fuse/internal/registry"
@@ -33,7 +34,7 @@ func newAPIEnv(t *testing.T) apiEnv {
 
 	reg := registry.NewRegistry()
 	cm := connectionmanager.NewConnectionManager(reg)
-	exec := executor.NewExecutor(reg)
+	exec := executor.NewExecutor(reg, config.DefaultMaxQueryRows)
 
 	return apiEnv{
 		router: api.NewRouter(cm, store, exec),
@@ -82,13 +83,20 @@ func assertStatus(t *testing.T, rec *httptest.ResponseRecorder, want int) {
 	}
 }
 
-func assertBodyContains(t *testing.T, rec *httptest.ResponseRecorder, want string) {
+
+func assertJSONErrorContains(t *testing.T, rec *httptest.ResponseRecorder, want string) {
 	t.Helper()
-	if !strings.Contains(rec.Body.String(), want) {
-		t.Fatalf("body = %q, want substring %q", rec.Body.String(), want)
+
+	var body struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode error body: %v; raw = %q", err, rec.Body.String())
+	}
+	if !strings.Contains(body.Error, want) {
+		t.Fatalf("error = %q, want substring %q", body.Error, want)
 	}
 }
-
 
 func registerSQLiteConnection(t *testing.T, env apiEnv, id, dbPath string) {
 	t.Helper()
@@ -125,6 +133,24 @@ func TestHandler_Health(t *testing.T) {
 	}
 	if body["status"] != "ok" {
 		t.Fatalf("status = %q, want ok", body["status"])
+	}
+}
+
+func TestHandler_GetConnections(t *testing.T) {
+	t.Parallel()
+
+	env := newAPIEnv(t)
+	registerMockConnection(t, env, "conn1")
+
+	rec := doRequest(t, env.router, http.MethodGet, api.PathConnections, nil, "")
+	assertStatus(t, rec, http.StatusOK)
+
+	var connections []map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&connections); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if len(connections) != 1 || connections[0]["id"] != "conn1" {
+		t.Fatalf("connections = %+v, want one conn1 record", connections)
 	}
 }
 
@@ -194,7 +220,7 @@ func TestHandler_PostConnection(t *testing.T) {
 			assertStatus(t, rec, tt.wantStatus)
 
 			if tt.bodySubstr != "" {
-				assertBodyContains(t, rec, tt.bodySubstr)
+				assertJSONErrorContains(t, rec, tt.bodySubstr)
 			}
 			if tt.verify != nil {
 				tt.verify(t, env)
@@ -215,7 +241,7 @@ func TestHandler_PostConnection_DuplicateID(t *testing.T) {
 
 	rec = doJSON(t, env.router, http.MethodPost, api.PathConnections, payload)
 	assertStatus(t, rec, http.StatusBadRequest)
-	assertBodyContains(t, rec, "already exists")
+	assertJSONErrorContains(t, rec, "already exists")
 }
 
 func registerMockConnection(t *testing.T, env apiEnv, id string) {
@@ -279,7 +305,7 @@ func TestHandler_DeleteConnection(t *testing.T) {
 			assertStatus(t, rec, tt.wantStatus)
 
 			if tt.bodySubstr != "" {
-				assertBodyContains(t, rec, tt.bodySubstr)
+				assertJSONErrorContains(t, rec, tt.bodySubstr)
 			}
 			if tt.verify != nil {
 				tt.verify(t, env, id)
@@ -358,7 +384,7 @@ func TestHandler_PostQuery(t *testing.T) {
 				return `{"id":"query_conn","sql":"SELECT * FROM missing_table"}`
 			},
 			wantStatus: http.StatusInternalServerError,
-			bodySubstr: "error querying",
+			bodySubstr: "query:",
 		},
 		{
 			name:       "unknown connection",
@@ -377,7 +403,7 @@ func TestHandler_PostQuery(t *testing.T) {
 			assertStatus(t, rec, tt.wantStatus)
 
 			if tt.bodySubstr != "" {
-				assertBodyContains(t, rec, tt.bodySubstr)
+				assertJSONErrorContains(t, rec, tt.bodySubstr)
 			}
 			if tt.verify != nil {
 				tt.verify(t, rec)

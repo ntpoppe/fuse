@@ -8,6 +8,10 @@ import (
 	"github.com/ntpoppe/fuse/internal/fuseerr"
 )
 
+type errorResponse struct {
+	Error string `json:"error"`
+}
+
 func decodeJSON(r *http.Request, dst any) error {
 	return json.NewDecoder(r.Body).Decode(dst)
 }
@@ -18,6 +22,10 @@ func writeJSON(w http.ResponseWriter, status int, body any) error {
 	return json.NewEncoder(w).Encode(body)
 }
 
+func writeAPIError(w http.ResponseWriter, status int, message string) {
+	_ = writeJSON(w, status, errorResponse{Error: message})
+}
+
 func writeError(w http.ResponseWriter, err error) {
 	status := http.StatusInternalServerError
 	switch {
@@ -25,6 +33,8 @@ func writeError(w http.ResponseWriter, err error) {
 		status = http.StatusNotFound
 	case errors.Is(err, fuseerr.ErrAlreadyExists):
 		status = http.StatusBadRequest
+	case errors.Is(err, fuseerr.ErrQueryRowLimit):
+		status = http.StatusBadRequest
 	}
-	http.Error(w, err.Error(), status)
+	writeAPIError(w, status, err.Error())
 }

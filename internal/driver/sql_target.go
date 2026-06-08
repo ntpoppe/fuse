@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
+	"github.com/ntpoppe/fuse/internal/fuseerr"
 )
 
 type sqlTarget struct {
@@ -42,16 +44,16 @@ func (t *sqlTarget) Close() error {
 	return t.db.Close()
 }
 
-func (t *sqlTarget) Query(ctx context.Context, sql string) ([]map[string]any, error) {
+func (t *sqlTarget) Query(ctx context.Context, sql string, maxRows int) ([]map[string]any, error) {
 	rows, err := t.db.QueryContext(ctx, sql)
 	if err != nil {
-		return nil, fmt.Errorf("error querying: %w", err)
+		return nil, fmt.Errorf("query: %w", err)
 	}
 	defer rows.Close()
 
 	cols, err := rows.Columns()
 	if err != nil {
-		return nil, fmt.Errorf("rows are closed: %w", err)
+		return nil, fmt.Errorf("read columns: %w", err)
 	}
 
 	colCount := len(cols)
@@ -61,10 +63,14 @@ func (t *sqlTarget) Query(ctx context.Context, sql string) ([]map[string]any, er
 		pointersBuffer[i] = &valuesBuffer[i]
 	}
 
-	var result []map[string]any
+	result := make([]map[string]any, 0)
 	for rows.Next() {
+		if maxRows > 0 && len(result) >= maxRows {
+			return nil, fuseerr.QueryRowLimitError{Limit: maxRows}
+		}
+
 		if err := rows.Scan(pointersBuffer...); err != nil {
-			return nil, fmt.Errorf("failed to scan row: %w", err)
+			return nil, fmt.Errorf("scan row: %w", err)
 		}
 
 		rowMap := make(map[string]any, colCount)
@@ -80,7 +86,7 @@ func (t *sqlTarget) Query(ctx context.Context, sql string) ([]map[string]any, er
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error occurred during row streaming: %w", err)
+		return nil, fmt.Errorf("iterate rows: %w", err)
 	}
 
 	return result, nil

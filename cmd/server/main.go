@@ -46,7 +46,7 @@ func main() {
 
 	reg := registry.NewRegistry()
 	cm := connectionmanager.NewConnectionManager(reg)
-	exec := executor.NewExecutor(reg)
+	exec := executor.NewExecutor(reg, cfg.MaxQueryRows)
 
 	initCtx, initCancel := context.WithTimeout(context.Background(), restoreTimeout)
 	defer initCancel()
@@ -99,6 +99,7 @@ func main() {
 func parseFlags(cfg *config.Config) {
 	flag.IntVar(&cfg.Port, "port", config.DefaultPort, "port to listen on")
 	flag.StringVar(&cfg.StateDBPath, "state-db", cfg.StateDBPath, "path to local state database")
+	flag.IntVar(&cfg.MaxQueryRows, "max-query-rows", cfg.MaxQueryRows, "maximum rows returned per query")
 
 	flag.Parse()
 

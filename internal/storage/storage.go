@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -36,6 +37,20 @@ func (s *Store) SaveConnection(ctx context.Context, conn SavedConnection) error 
 		return fmt.Errorf("save connection %q: %w", conn.ID, err)
 	}
 	return nil
+}
+
+func (s *Store) GetConnection(ctx context.Context, id string) (SavedConnection, bool, error) {
+	query := fmt.Sprintf("SELECT id, driver, host FROM %s WHERE id = ?;", connectionsTable)
+
+	var conn SavedConnection
+	err := s.db.QueryRowContext(ctx, query, id).Scan(&conn.ID, &conn.Driver, &conn.Host)
+	if errors.Is(err, sql.ErrNoRows) {
+		return SavedConnection{}, false, nil
+	}
+	if err != nil {
+		return SavedConnection{}, false, fmt.Errorf("get connection %q: %w", id, err)
+	}
+	return conn, true, nil
 }
 
 func (s *Store) RemoveConnection(ctx context.Context, id string) error {

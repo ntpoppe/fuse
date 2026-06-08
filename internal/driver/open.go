@@ -26,6 +26,7 @@ func OpenTarget(id, driverName, host string) (Target, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open connection for driver %q: %w", driverName, err)
 	}
+	configurePool(db)
 
 	ctx, cancel := context.WithTimeout(context.Background(), targetPingTimeout)
 	defer cancel()

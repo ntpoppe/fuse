@@ -20,6 +20,12 @@ type connectionPayload struct {
 	Host   string `json:"host"`
 }
 
+type connectionResponse struct {
+	ID     string `json:"id"`
+	Driver string `json:"driver"`
+	Host   string `json:"host"`
+}
+
 type queryPayload struct {
 	ID  string `json:"id"`
 	SQL string `json:"sql"`
@@ -39,6 +45,7 @@ func NewRouter(
 	}
 
 	router.HandleFunc("GET "+PathHealth, h.GetHealth)
+	router.HandleFunc("GET "+PathConnections, h.GetConnections)
 	router.HandleFunc("POST "+PathConnections, h.PostConnection)
 	router.HandleFunc("DELETE "+PathConnectionByID, h.DeleteConnection)
 	router.HandleFunc("POST "+PathQuery, h.PostQuery)
@@ -48,24 +55,45 @@ func NewRouter(
 
 func (h *Handler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	if err := writeJSON(w, http.StatusOK, map[string]string{fieldStatus: healthStatusOK}); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+	}
+}
+
+func (h *Handler) GetConnections(w http.ResponseWriter, r *http.Request) {
+	connections, err := h.store.GetAllConnections(r.Context())
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	response := make([]connectionResponse, 0, len(connections))
+	for _, conn := range connections {
+		response = append(response, connectionResponse{
+			ID:     conn.ID,
+			Driver: conn.Driver,
+			Host:   conn.Host,
+		})
+	}
+
+	if err := writeJSON(w, http.StatusOK, response); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 	}
 }
 
 func (h *Handler) PostConnection(w http.ResponseWriter, r *http.Request) {
 	var payload connectionPayload
 	if err := decodeJSON(r, &payload); err != nil {
-		http.Error(w, errInvalidJSON, http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, errInvalidJSON)
 		return
 	}
 
 	if payload.ID == "" || payload.Driver == "" || payload.Host == "" {
-		http.Error(w, errMissingConnFields, http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, errMissingConnFields)
 		return
 	}
 
 	if err := h.cm.RegisterConnection(payload.ID, payload.Driver, payload.Host); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -76,7 +104,7 @@ func (h *Handler) PostConnection(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.store.SaveConnection(r.Context(), connRecord); err != nil {
 		_ = h.cm.RemoveConnection(payload.ID)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -86,7 +114,13 @@ func (h *Handler) PostConnection(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) DeleteConnection(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		http.Error(w, errMissingConnectionID, http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, errMissingConnectionID)
+		return
+	}
+
+	saved, _, err := h.store.GetConnection(r.Context(), id)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -96,7 +130,10 @@ func (h *Handler) DeleteConnection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.store.RemoveConnection(r.Context(), id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		if saved.ID != "" {
+			_ = h.cm.RegisterConnection(saved.ID, saved.Driver, saved.Host)
+		}
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -106,12 +143,12 @@ func (h *Handler) DeleteConnection(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) PostQuery(w http.ResponseWriter, r *http.Request) {
 	var payload queryPayload
 	if err := decodeJSON(r, &payload); err != nil {
-		http.Error(w, errInvalidJSON, http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, errInvalidJSON)
 		return
 	}
 
 	if payload.ID == "" || payload.SQL == "" {
-		http.Error(w, errMissingQueryFields, http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, errMissingQueryFields)
 		return
 	}
 
@@ -122,6 +159,6 @@ func (h *Handler) PostQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := writeJSON(w, http.StatusOK, results); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 	}
 }

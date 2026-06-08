@@ -6,16 +6,21 @@ import (
 	"github.com/ntpoppe/fuse/internal/storage"
 )
 
-const DefaultPort = 5000
+const (
+	DefaultPort         = 5000
+	DefaultMaxQueryRows = 10_000
+)
 
 type Config struct {
-	Port        int
-	StateDBPath string
+	Port         int
+	StateDBPath  string
+	MaxQueryRows int
 }
 
 func NewConfig() *Config {
 	return &Config{
-		StateDBPath: storage.DefaultStateDBPath,
+		StateDBPath:  storage.DefaultStateDBPath,
+		MaxQueryRows: DefaultMaxQueryRows,
 	}
 }
 
@@ -30,6 +35,10 @@ func (c *Config) Validate() error {
 
 	if c.StateDBPath == "" {
 		return fmt.Errorf("state database path must not be empty")
+	}
+
+	if c.MaxQueryRows < 1 {
+		return fmt.Errorf("max query rows must be at least 1")
 	}
 
 	return nil

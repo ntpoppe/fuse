@@ -9,11 +9,15 @@ import (
 )
 
 type Executor struct {
-	registry *registry.Registry
+	registry     *registry.Registry
+	maxQueryRows int
 }
 
-func NewExecutor(reg *registry.Registry) *Executor {
-	return &Executor{registry: reg}
+func NewExecutor(reg *registry.Registry, maxQueryRows int) *Executor {
+	return &Executor{
+		registry:     reg,
+		maxQueryRows: maxQueryRows,
+	}
 }
 
 func (e *Executor) ExecuteQuery(ctx context.Context, id, sql string) ([]map[string]any, error) {
@@ -26,5 +30,5 @@ func (e *Executor) ExecuteQuery(ctx context.Context, id, sql string) ([]map[stri
 		return nil, fmt.Errorf("read-only violation: %w", err)
 	}
 
-	return target.Query(ctx, sql)
+	return target.Query(ctx, sql, e.maxQueryRows)
 }
