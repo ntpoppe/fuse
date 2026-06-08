@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/ntpoppe/fuse/internal/executor"
 	"github.com/ntpoppe/fuse/internal/fuseerr"
 )
 
@@ -37,4 +38,17 @@ func writeError(w http.ResponseWriter, err error) {
 		status = http.StatusBadRequest
 	}
 	writeAPIError(w, status, err.Error())
+}
+
+func writeFederatedError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, fuseerr.ErrNotFound):
+		writeAPIError(w, http.StatusNotFound, err.Error())
+	default:
+		status := http.StatusBadRequest
+		if errors.Is(err, executor.ErrNotImplemented) {
+			status = http.StatusNotImplemented
+		}
+		writeAPIError(w, status, err.Error())
+	}
 }

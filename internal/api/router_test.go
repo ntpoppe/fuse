@@ -35,9 +35,10 @@ func newAPIEnv(t *testing.T) apiEnv {
 	reg := registry.NewRegistry()
 	cm := connectionmanager.NewConnectionManager(reg)
 	exec := executor.NewExecutor(reg, config.DefaultMaxQueryRows)
+	fedExec := executor.NewFederatedExecutor(reg)
 
 	return apiEnv{
-		router: api.NewRouter(cm, store, exec),
+		router: api.NewRouter(cm, store, exec, fedExec),
 		store:  store,
 		cm:     cm,
 	}
@@ -247,7 +248,7 @@ func TestHandler_PostConnection_DuplicateID(t *testing.T) {
 func registerMockConnection(t *testing.T, env apiEnv, id string) {
 	t.Helper()
 
-	driver := testutil.RegisterNamedMockDriver(t, "conn", false)
+	driver := testutil.RegisterNamedMockDriver(t, id, false)
 	rec := doJSON(t, env.router, http.MethodPost, api.PathConnections, map[string]string{
 		"id": id, "driver": driver, "host": "localhost:3306",
 	})
@@ -407,6 +408,73 @@ func TestHandler_PostQuery(t *testing.T) {
 			}
 			if tt.verify != nil {
 				tt.verify(t, rec)
+			}
+		})
+	}
+}
+
+func TestHandler_PostFederatedQuery(t *testing.T) {
+	t.Parallel()
+
+	validSQL := `SELECT u.id, u.name, o.total FROM billing.users u JOIN analytics.orders o ON u.id = o.user_id WHERE u.active = 1 LIMIT 100`
+
+	tests := []struct {
+		name       string
+		setup      func(t *testing.T, env apiEnv) any
+		wantStatus int
+		bodySubstr string
+	}{
+		{
+			name: "valid sql not implemented",
+			setup: func(t *testing.T, env apiEnv) any {
+				registerMockConnection(t, env, "billing")
+				registerMockConnection(t, env, "analytics")
+				return map[string]string{"sql": validSQL}
+			},
+			wantStatus: http.StatusNotImplemented,
+			bodySubstr: "not implemented",
+		},
+		{
+			name:       "invalid json",
+			setup:      func(*testing.T, apiEnv) any { return "not-json" },
+			wantStatus: http.StatusBadRequest,
+			bodySubstr: "invalid JSON payload",
+		},
+		{
+			name:       "missing sql",
+			setup:      func(*testing.T, apiEnv) any { return map[string]string{} },
+			wantStatus: http.StatusBadRequest,
+			bodySubstr: "missing required field: sql",
+		},
+		{
+			name: "invalid sql",
+			setup: func(*testing.T, apiEnv) any {
+				return map[string]string{"sql": "SELECT u.id FROM users u"}
+			},
+			wantStatus: http.StatusBadRequest,
+			bodySubstr: "connection_id.table",
+		},
+		{
+			name: "unknown connection",
+			setup: func(t *testing.T, env apiEnv) any {
+				registerMockConnection(t, env, "billing")
+				return map[string]string{"sql": validSQL}
+			},
+			wantStatus: http.StatusNotFound,
+			bodySubstr: "analytics",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			env := newAPIEnv(t)
+			rec := doJSON(t, env.router, http.MethodPost, api.PathFederatedQuery, tt.setup(t, env))
+			assertStatus(t, rec, tt.wantStatus)
+
+			if tt.bodySubstr != "" {
+				assertJSONErrorContains(t, rec, tt.bodySubstr)
 			}
 		})
 	}

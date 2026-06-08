@@ -47,6 +47,7 @@ func main() {
 	reg := registry.NewRegistry()
 	cm := connectionmanager.NewConnectionManager(reg)
 	exec := executor.NewExecutor(reg, cfg.MaxQueryRows)
+	fedExec := executor.NewFederatedExecutor(reg)
 
 	initCtx, initCancel := context.WithTimeout(context.Background(), restoreTimeout)
 	defer initCancel()
@@ -63,7 +64,7 @@ func main() {
 		}
 	}
 
-	router := api.NewRouter(cm, store, exec)
+	router := api.NewRouter(cm, store, exec, fedExec)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

@@ -9,9 +9,10 @@ import (
 )
 
 type Handler struct {
-	cm    *connectionmanager.ConnectionManager
-	store *storage.Store
-	exec  *executor.Executor
+	cm      *connectionmanager.ConnectionManager
+	store   *storage.Store
+	exec    *executor.Executor
+	fedExec *executor.FederatedExecutor
 }
 
 type connectionPayload struct {
@@ -31,17 +32,23 @@ type queryPayload struct {
 	SQL string `json:"sql"`
 }
 
+type federatedQueryPayload struct {
+	SQL string `json:"sql"`
+}
+
 func NewRouter(
 	cm *connectionmanager.ConnectionManager,
 	store *storage.Store,
 	exec *executor.Executor,
+	fedExec *executor.FederatedExecutor,
 ) *http.ServeMux {
 	router := http.ServeMux{}
 
 	h := &Handler{
-		cm:    cm,
-		store: store,
-		exec:  exec,
+		cm:      cm,
+		store:   store,
+		exec:    exec,
+		fedExec: fedExec,
 	}
 
 	router.HandleFunc("GET "+PathHealth, h.GetHealth)
@@ -49,6 +56,7 @@ func NewRouter(
 	router.HandleFunc("POST "+PathConnections, h.PostConnection)
 	router.HandleFunc("DELETE "+PathConnectionByID, h.DeleteConnection)
 	router.HandleFunc("POST "+PathQuery, h.PostQuery)
+	router.HandleFunc("POST "+PathFederatedQuery, h.PostFederatedQuery)
 
 	return &router
 }
@@ -159,6 +167,29 @@ func (h *Handler) PostQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := writeJSON(w, http.StatusOK, results); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+	}
+}
+
+func (h *Handler) PostFederatedQuery(w http.ResponseWriter, r *http.Request) {
+	var payload federatedQueryPayload
+	if err := decodeJSON(r, &payload); err != nil {
+		writeAPIError(w, http.StatusBadRequest, errInvalidJSON)
+		return
+	}
+
+	if payload.SQL == "" {
+		writeAPIError(w, http.StatusBadRequest, errMissingFederatedSQL)
+		return
+	}
+
+	_, err := h.fedExec.ExecuteFederatedQuery(r.Context(), payload.SQL)
+	if err != nil {
+		writeFederatedError(w, err)
+		return
+	}
+
+	if err := writeJSON(w, http.StatusOK, []map[string]any{}); err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 	}
 }
