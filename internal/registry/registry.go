@@ -25,6 +25,11 @@ func (r *Registry) Fetch(key string) (driver.Target, bool) {
 	return val, exists
 }
 
+func (r *Registry) HasConnection(id string) bool {
+	_, ok := r.Fetch(id)
+	return ok
+}
+
 func (r *Registry) Save(key string, val driver.Target) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

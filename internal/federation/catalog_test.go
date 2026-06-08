@@ -4,18 +4,17 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/ntpoppe/fuse/internal/driver"
 	"github.com/ntpoppe/fuse/internal/federation"
 	"github.com/ntpoppe/fuse/internal/fuseerr"
 	"github.com/ntpoppe/fuse/internal/registry"
 	"github.com/ntpoppe/fuse/internal/testutil"
 )
 
-type stubLookup map[string]driver.Target
+type stubLookup map[string]struct{}
 
-func (s stubLookup) Fetch(id string) (driver.Target, bool) {
-	target, ok := s[id]
-	return target, ok
+func (s stubLookup) HasConnection(id string) bool {
+	_, ok := s[id]
+	return ok
 }
 
 func TestResolveConnectionsAllPresent(t *testing.T) {
@@ -27,8 +26,8 @@ func TestResolveConnectionsAllPresent(t *testing.T) {
 	}
 
 	lookup := stubLookup{
-		"billing":   testutil.NewStubTarget("billing"),
-		"analytics": testutil.NewStubTarget("analytics"),
+		"billing":   {},
+		"analytics": {},
 	}
 
 	if err := federation.ResolveConnections(q, lookup); err != nil {
@@ -44,9 +43,7 @@ func TestResolveConnectionsSameConnectionTwice(t *testing.T) {
 		},
 	}
 
-	lookup := stubLookup{
-		"billing": testutil.NewStubTarget("billing"),
-	}
+	lookup := stubLookup{"billing": {}}
 
 	if err := federation.ResolveConnections(q, lookup); err != nil {
 		t.Fatalf("ResolveConnections() error = %v", err)
@@ -61,9 +58,7 @@ func TestResolveConnectionsMissing(t *testing.T) {
 		},
 	}
 
-	lookup := stubLookup{
-		"billing": testutil.NewStubTarget("billing"),
-	}
+	lookup := stubLookup{"billing": {}}
 
 	err := federation.ResolveConnections(q, lookup)
 	var notFound fuseerr.NotFoundError

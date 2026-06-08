@@ -1,19 +1,16 @@
 package federation
 
-import (
-	"github.com/ntpoppe/fuse/internal/driver"
-	"github.com/ntpoppe/fuse/internal/fuseerr"
-)
+import "github.com/ntpoppe/fuse/internal/fuseerr"
 
-// ConnectionLookup resolves registered connections by id.
+// ConnectionLookup checks whether registered connections exist by id.
 type ConnectionLookup interface {
-	Fetch(id string) (driver.Target, bool)
+	HasConnection(id string) bool
 }
 
 // ResolveConnections verifies every connection id referenced in q exists in lookup.
 func ResolveConnections(q *ParsedQuery, lookup ConnectionLookup) error {
 	for _, id := range connectionIDs(q) {
-		if _, ok := lookup.Fetch(id); !ok {
+		if !lookup.HasConnection(id) {
 			return fuseerr.NotFoundError{ID: id}
 		}
 	}

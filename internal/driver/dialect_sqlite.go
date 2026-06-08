@@ -1,6 +1,9 @@
 package driver
 
-import "github.com/ntpoppe/fuse/internal/driver/validate"
+import (
+	"github.com/ntpoppe/fuse/internal/driver/validate"
+	"github.com/ntpoppe/fuse/internal/federation"
+)
 
 type sqliteDialect struct{}
 
@@ -22,4 +25,8 @@ func (sqliteDialect) QuoteIdent(name string) string {
 
 func (sqliteDialect) Placeholder(index int) string {
 	return questionPlaceholder(index)
+}
+
+func (d sqliteDialect) RenderSelect(leg federation.QueryLeg) (string, []any, error) {
+	return renderSelect(d, leg)
 }
