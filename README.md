@@ -1,3 +1,3 @@
 # fuse
 
-cross-db read-only query layer.
+a lightweight federated query engine.
