@@ -47,7 +47,7 @@ func main() {
 	reg := registry.NewRegistry()
 	cm := connectionmanager.NewConnectionManager(reg)
 	exec := executor.NewExecutor(reg, cfg.MaxQueryRows)
-	fedExec := executor.NewFederatedExecutor(reg)
+	fedExec := executor.NewFederatedExecutor(reg, cfg.MaxQueryRows)
 
 	initCtx, initCancel := context.WithTimeout(context.Background(), restoreTimeout)
 	defer initCancel()

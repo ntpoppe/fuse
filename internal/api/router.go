@@ -183,13 +183,13 @@ func (h *Handler) PostFederatedQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := h.fedExec.ExecuteFederatedQuery(r.Context(), payload.SQL)
+	results, err := h.fedExec.ExecuteFederatedQuery(r.Context(), payload.SQL)
 	if err != nil {
 		writeFederatedError(w, err)
 		return
 	}
 
-	if err := writeJSON(w, http.StatusOK, []map[string]any{}); err != nil {
+	if err := writeJSON(w, http.StatusOK, results); err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 	}
 }

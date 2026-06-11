@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
-	"github.com/ntpoppe/fuse/internal/executor"
 	"github.com/ntpoppe/fuse/internal/fuseerr"
 )
 
@@ -44,11 +44,14 @@ func writeFederatedError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, fuseerr.ErrNotFound):
 		writeAPIError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, fuseerr.ErrQueryRowLimit):
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 	default:
 		status := http.StatusBadRequest
-		if errors.Is(err, executor.ErrNotImplemented) {
-			status = http.StatusNotImplemented
+		msg := err.Error()
+		if strings.Contains(msg, "query leg") || strings.Contains(msg, "render leg") {
+			status = http.StatusInternalServerError
 		}
-		writeAPIError(w, status, err.Error())
+		writeAPIError(w, status, msg)
 	}
 }

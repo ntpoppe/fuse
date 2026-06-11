@@ -2,23 +2,24 @@ package executor
 
 import (
 	"context"
-	"errors"
 
 	"github.com/ntpoppe/fuse/internal/federation"
 	"github.com/ntpoppe/fuse/internal/registry"
 )
 
-var ErrNotImplemented = errors.New("federated query execution is not implemented yet")
-
 type FederatedExecutor struct {
-	registry *registry.Registry
+	registry     *registry.Registry
+	maxQueryRows int
 }
 
-func NewFederatedExecutor(reg *registry.Registry) *FederatedExecutor {
-	return &FederatedExecutor{registry: reg}
+func NewFederatedExecutor(reg *registry.Registry, maxQueryRows int) *FederatedExecutor {
+	return &FederatedExecutor{
+		registry:     reg,
+		maxQueryRows: maxQueryRows,
+	}
 }
 
-func (e *FederatedExecutor) ExecuteFederatedQuery(_ context.Context, sql string) ([]map[string]any, error) {
+func (e *FederatedExecutor) ExecuteFederatedQuery(ctx context.Context, sql string) ([]map[string]any, error) {
 	q, err := federation.Parse(sql)
 	if err != nil {
 		return nil, err
@@ -28,5 +29,11 @@ func (e *FederatedExecutor) ExecuteFederatedQuery(_ context.Context, sql string)
 		return nil, err
 	}
 
-	return nil, ErrNotImplemented
+	plan, err := federation.Plan(q)
+	if err != nil {
+		return nil, err
+	}
+
+	runner := federation.NewRunner(e.registry, e.maxQueryRows)
+	return runner.Run(ctx, plan)
 }

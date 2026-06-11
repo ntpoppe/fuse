@@ -35,7 +35,7 @@ func newAPIEnv(t *testing.T) apiEnv {
 	reg := registry.NewRegistry()
 	cm := connectionmanager.NewConnectionManager(reg)
 	exec := executor.NewExecutor(reg, config.DefaultMaxQueryRows)
-	fedExec := executor.NewFederatedExecutor(reg)
+	fedExec := executor.NewFederatedExecutor(reg, config.DefaultMaxQueryRows)
 
 	return apiEnv{
 		router: api.NewRouter(cm, store, exec, fedExec),
@@ -413,6 +413,29 @@ func TestHandler_PostQuery(t *testing.T) {
 	}
 }
 
+func registerFederatedSQLiteConnections(t *testing.T, env apiEnv) {
+	t.Helper()
+
+	billingPath := testutil.SeedSQLiteFile(t, `
+CREATE TABLE users (
+	id INTEGER PRIMARY KEY,
+	name TEXT NOT NULL,
+	active INTEGER NOT NULL
+);
+INSERT INTO users (id, name, active) VALUES (1, 'alice', 1), (2, 'bob', 1);
+`)
+	analyticsPath := testutil.SeedSQLiteFile(t, `
+CREATE TABLE orders (
+	user_id INTEGER NOT NULL,
+	total REAL NOT NULL
+);
+INSERT INTO orders (user_id, total) VALUES (1, 10.5), (2, 20.0);
+`)
+
+	registerSQLiteConnection(t, env, "billing", billingPath)
+	registerSQLiteConnection(t, env, "analytics", analyticsPath)
+}
+
 func TestHandler_PostFederatedQuery(t *testing.T) {
 	t.Parallel()
 
@@ -423,16 +446,24 @@ func TestHandler_PostFederatedQuery(t *testing.T) {
 		setup      func(t *testing.T, env apiEnv) any
 		wantStatus int
 		bodySubstr string
+		verify     func(t *testing.T, rec *httptest.ResponseRecorder)
 	}{
 		{
-			name: "valid sql not implemented",
+			name: "success",
 			setup: func(t *testing.T, env apiEnv) any {
-				registerMockConnection(t, env, "billing")
-				registerMockConnection(t, env, "analytics")
+				registerFederatedSQLiteConnections(t, env)
 				return map[string]string{"sql": validSQL}
 			},
-			wantStatus: http.StatusNotImplemented,
-			bodySubstr: "not implemented",
+			wantStatus: http.StatusOK,
+			verify: func(t *testing.T, rec *httptest.ResponseRecorder) {
+				var results []map[string]any
+				if err := json.NewDecoder(rec.Body).Decode(&results); err != nil {
+					t.Fatalf("decode response: %v", err)
+				}
+				if len(results) != 2 || results[0]["name"] != "alice" {
+					t.Fatalf("results = %+v, want two rows starting with alice", results)
+				}
+			},
 		},
 		{
 			name:       "invalid json",
@@ -475,6 +506,9 @@ func TestHandler_PostFederatedQuery(t *testing.T) {
 
 			if tt.bodySubstr != "" {
 				assertJSONErrorContains(t, rec, tt.bodySubstr)
+			}
+			if tt.verify != nil {
+				tt.verify(t, rec)
 			}
 		})
 	}
