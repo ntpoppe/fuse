@@ -1,9 +1,6 @@
 package driver
 
-import (
-	"github.com/ntpoppe/fuse/internal/driver/validate"
-	"github.com/ntpoppe/fuse/internal/federation"
-)
+import "github.com/ntpoppe/fuse/internal/driver/validate"
 
 type mysqlDialect struct{}
 
@@ -27,6 +24,6 @@ func (mysqlDialect) Placeholder(index int) string {
 	return questionPlaceholder(index)
 }
 
-func (d mysqlDialect) RenderSelect(leg federation.QueryLeg) (string, []any, error) {
+func (d mysqlDialect) RenderSelect(leg SelectLeg) (string, []any, error) {
 	return renderSelect(d, leg)
 }

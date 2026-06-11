@@ -5,36 +5,21 @@ import (
 	"testing"
 
 	"github.com/ntpoppe/fuse/internal/driver"
-	"github.com/ntpoppe/fuse/internal/federation"
 )
 
-func billingUsersLeg() federation.QueryLeg {
-	return federation.QueryLeg{
-		ConnectionID: "billing",
-		Table: federation.QualifiedTable{
-			ConnectionID: "billing",
-			Table:        "users",
-			Alias:        "u",
-		},
+func billingUsersLeg() driver.SelectLeg {
+	return driver.SelectLeg{
+		Table:   "users",
 		Columns: []string{"id", "name", "active"},
-		Where: []federation.Predicate{
-			{
-				Column: federation.ColumnRef{Table: "u", Column: "active"},
-				Op:     "=",
-				Value:  1,
-			},
+		Where: []driver.SelectPredicate{
+			{Column: "active", Op: "=", Value: 1},
 		},
 	}
 }
 
-func analyticsOrdersLeg() federation.QueryLeg {
-	return federation.QueryLeg{
-		ConnectionID: "analytics",
-		Table: federation.QualifiedTable{
-			ConnectionID: "analytics",
-			Table:        "orders",
-			Alias:        "o",
-		},
+func analyticsOrdersLeg() driver.SelectLeg {
+	return driver.SelectLeg{
+		Table:   "orders",
 		Columns: []string{"user_id", "total"},
 	}
 }
@@ -89,8 +74,8 @@ func TestRenderSelectWithoutWhere(t *testing.T) {
 
 func TestRenderSelectMultiplePredicates(t *testing.T) {
 	leg := billingUsersLeg()
-	leg.Where = append(leg.Where, federation.Predicate{
-		Column: federation.ColumnRef{Table: "u", Column: "name"},
+	leg.Where = append(leg.Where, driver.SelectPredicate{
+		Column: "name",
 		Op:     "<>",
 		Value:  "deleted",
 	})
@@ -112,7 +97,7 @@ func TestRenderSelectMultiplePredicates(t *testing.T) {
 
 func TestRenderSelectEmptyColumns(t *testing.T) {
 	d := driver.NewSQLiteDialect()
-	_, _, err := d.RenderSelect(federation.QueryLeg{ConnectionID: "billing"})
+	_, _, err := d.RenderSelect(driver.SelectLeg{Table: "users"})
 	if err == nil {
 		t.Fatal("expected error for empty columns")
 	}

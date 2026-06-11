@@ -34,6 +34,6 @@ func (s *StubTarget) Close() error {
 	return nil
 }
 
-func (s *StubTarget) Query(context.Context, string, int) ([]map[string]any, error) {
+func (s *StubTarget) Query(context.Context, string, []any, int) ([]map[string]any, error) {
 	return nil, nil
 }

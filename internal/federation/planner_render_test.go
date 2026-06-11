@@ -66,7 +66,7 @@ func TestPlannerRenderGoldenTwoTableJoin(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sql, args, err := tt.dialect.RenderSelect(plan.Legs[tt.legIndex])
+			sql, args, err := tt.dialect.RenderSelect(federation.SelectLegForDriver(plan.Legs[tt.legIndex]))
 			if err != nil {
 				t.Fatalf("RenderSelect() error = %v", err)
 			}
@@ -94,7 +94,7 @@ func TestPlannerRenderGoldenSingleTable(t *testing.T) {
 		t.Fatalf("Legs len = %d, want 1", len(plan.Legs))
 	}
 
-	sql, args, err := driver.NewSQLiteDialect().RenderSelect(plan.Legs[0])
+	sql, args, err := driver.NewSQLiteDialect().RenderSelect(federation.SelectLegForDriver(plan.Legs[0]))
 	if err != nil {
 		t.Fatalf("RenderSelect() error = %v", err)
 	}
@@ -126,7 +126,7 @@ func TestPlannerRenderAllLegsPassReadOnlyValidation(t *testing.T) {
 
 	for _, d := range dialects {
 		for i, leg := range plan.Legs {
-			if _, _, err := d.RenderSelect(leg); err != nil {
+			if _, _, err := d.RenderSelect(federation.SelectLegForDriver(leg)); err != nil {
 				t.Fatalf("%T leg %d RenderSelect() error = %v", d, i, err)
 			}
 		}

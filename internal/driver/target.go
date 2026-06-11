@@ -8,5 +8,5 @@ type Target interface {
 	Dialect() Dialect
 	Ping(ctx context.Context) error
 	Close() error
-	Query(ctx context.Context, sql string, maxRows int) ([]map[string]any, error)
+	Query(ctx context.Context, sql string, args []any, maxRows int) ([]map[string]any, error)
 }

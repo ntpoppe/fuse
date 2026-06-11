@@ -44,8 +44,8 @@ func (t *sqlTarget) Close() error {
 	return t.db.Close()
 }
 
-func (t *sqlTarget) Query(ctx context.Context, sql string, maxRows int) ([]map[string]any, error) {
-	rows, err := t.db.QueryContext(ctx, sql)
+func (t *sqlTarget) Query(ctx context.Context, sql string, args []any, maxRows int) ([]map[string]any, error) {
+	rows, err := t.db.QueryContext(ctx, sql, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query: %w", err)
 	}

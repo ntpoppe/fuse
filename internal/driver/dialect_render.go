@@ -3,13 +3,11 @@ package driver
 import (
 	"fmt"
 	"strings"
-
-	"github.com/ntpoppe/fuse/internal/federation"
 )
 
-func renderSelect(d Dialect, leg federation.QueryLeg) (string, []any, error) {
+func renderSelect(d Dialect, leg SelectLeg) (string, []any, error) {
 	if len(leg.Columns) == 0 {
-		return "", nil, fmt.Errorf("leg %q has no columns to select", leg.ConnectionID)
+		return "", nil, fmt.Errorf("leg for table %q has no columns to select", leg.Table)
 	}
 
 	quotedCols := make([]string, len(leg.Columns))
@@ -21,7 +19,7 @@ func renderSelect(d Dialect, leg federation.QueryLeg) (string, []any, error) {
 	b.WriteString("SELECT ")
 	b.WriteString(strings.Join(quotedCols, ", "))
 	b.WriteString(" FROM ")
-	b.WriteString(d.QuoteIdent(leg.Table.Table))
+	b.WriteString(d.QuoteIdent(leg.Table))
 
 	args := make([]any, 0, len(leg.Where))
 	if len(leg.Where) > 0 {
@@ -30,7 +28,7 @@ func renderSelect(d Dialect, leg federation.QueryLeg) (string, []any, error) {
 			if i > 0 {
 				b.WriteString(" AND ")
 			}
-			b.WriteString(d.QuoteIdent(pred.Column.Column))
+			b.WriteString(d.QuoteIdent(pred.Column))
 			b.WriteString(" ")
 			b.WriteString(pred.Op)
 			b.WriteString(" ")

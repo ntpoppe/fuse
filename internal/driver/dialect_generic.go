@@ -1,9 +1,6 @@
 package driver
 
-import (
-	"github.com/ntpoppe/fuse/internal/driver/validate"
-	"github.com/ntpoppe/fuse/internal/federation"
-)
+import "github.com/ntpoppe/fuse/internal/driver/validate"
 
 type genericDialect struct {
 	kind Kind
@@ -41,6 +38,6 @@ func (d genericDialect) Placeholder(index int) string {
 	return questionPlaceholder(index)
 }
 
-func (d genericDialect) RenderSelect(leg federation.QueryLeg) (string, []any, error) {
+func (d genericDialect) RenderSelect(leg SelectLeg) (string, []any, error) {
 	return renderSelect(d, leg)
 }
