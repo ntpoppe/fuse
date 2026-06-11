@@ -8,7 +8,6 @@ import (
 	"github.com/ntpoppe/fuse/internal/registry"
 )
 
-// ErrNotImplemented is returned when federated SQL is valid but execution is not wired yet.
 var ErrNotImplemented = errors.New("federated query execution is not implemented yet")
 
 type FederatedExecutor struct {
