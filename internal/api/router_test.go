@@ -1,7 +1,9 @@
 package api_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,12 +21,16 @@ import (
 )
 
 type apiEnv struct {
-	router *http.ServeMux
-	store  *storage.Store
-	cm     *connectionmanager.ConnectionManager
+	handler http.Handler
+	store   *storage.Store
+	cm      *connectionmanager.ConnectionManager
 }
 
 func newAPIEnv(t *testing.T) apiEnv {
+	return newAPIEnvWithMaxRows(t, config.DefaultMaxQueryRows)
+}
+
+func newAPIEnvWithMaxRows(t *testing.T, maxRows int) apiEnv {
 	t.Helper()
 
 	store := storage.NewStore(testutil.OpenSQLiteMemory(t))
@@ -34,11 +40,11 @@ func newAPIEnv(t *testing.T) apiEnv {
 
 	reg := registry.NewRegistry()
 	cm := connectionmanager.NewConnectionManager(reg)
-	exec := executor.NewExecutor(reg, config.DefaultMaxQueryRows)
-	fedExec := executor.NewFederatedExecutor(reg, config.DefaultMaxQueryRows)
+	exec := executor.NewExecutor(reg, maxRows)
+	fedExec := executor.NewFederatedExecutor(reg, maxRows)
 
 	return apiEnv{
-		router: api.NewRouter(cm, store, exec, fedExec),
+		handler: api.NewRouter(cm, store, exec, fedExec),
 		store:  store,
 		cm:     cm,
 	}
@@ -102,7 +108,7 @@ func assertJSONErrorContains(t *testing.T, rec *httptest.ResponseRecorder, want 
 func registerSQLiteConnection(t *testing.T, env apiEnv, id, dbPath string) {
 	t.Helper()
 
-	rec := doJSON(t, env.router, http.MethodPost, api.PathConnections, map[string]string{
+	rec := doJSON(t, env.handler, http.MethodPost, api.PathConnections, map[string]string{
 		"id":     id,
 		"driver": driver.DriverSQLite,
 		"host":   dbPath,
@@ -120,7 +126,7 @@ func TestHandler_Health(t *testing.T) {
 	t.Parallel()
 
 	env := newAPIEnv(t)
-	rec := doRequest(t, env.router, http.MethodGet, api.PathHealth, nil, "")
+	rec := doRequest(t, env.handler, http.MethodGet, api.PathHealth, nil, "")
 
 	assertStatus(t, rec, http.StatusOK)
 
@@ -143,7 +149,7 @@ func TestHandler_GetConnections(t *testing.T) {
 	env := newAPIEnv(t)
 	registerMockConnection(t, env, "conn1")
 
-	rec := doRequest(t, env.router, http.MethodGet, api.PathConnections, nil, "")
+	rec := doRequest(t, env.handler, http.MethodGet, api.PathConnections, nil, "")
 	assertStatus(t, rec, http.StatusOK)
 
 	var connections []map[string]string
@@ -217,7 +223,7 @@ func TestHandler_PostConnection(t *testing.T) {
 			t.Parallel()
 
 			env := newAPIEnv(t)
-			rec := doJSON(t, env.router, http.MethodPost, api.PathConnections, tt.setup(t, env))
+			rec := doJSON(t, env.handler, http.MethodPost, api.PathConnections, tt.setup(t, env))
 			assertStatus(t, rec, tt.wantStatus)
 
 			if tt.bodySubstr != "" {
@@ -237,10 +243,10 @@ func TestHandler_PostConnection_DuplicateID(t *testing.T) {
 		"id": "conn1", "driver": driver, "host": "localhost:3306",
 	}
 
-	rec := doJSON(t, env.router, http.MethodPost, api.PathConnections, payload)
+	rec := doJSON(t, env.handler, http.MethodPost, api.PathConnections, payload)
 	assertStatus(t, rec, http.StatusCreated)
 
-	rec = doJSON(t, env.router, http.MethodPost, api.PathConnections, payload)
+	rec = doJSON(t, env.handler, http.MethodPost, api.PathConnections, payload)
 	assertStatus(t, rec, http.StatusBadRequest)
 	assertJSONErrorContains(t, rec, "already exists")
 }
@@ -249,7 +255,7 @@ func registerMockConnection(t *testing.T, env apiEnv, id string) {
 	t.Helper()
 
 	driver := testutil.RegisterNamedMockDriver(t, id, false)
-	rec := doJSON(t, env.router, http.MethodPost, api.PathConnections, map[string]string{
+	rec := doJSON(t, env.handler, http.MethodPost, api.PathConnections, map[string]string{
 		"id": id, "driver": driver, "host": "localhost:3306",
 	})
 	assertStatus(t, rec, http.StatusCreated)
@@ -302,7 +308,7 @@ func TestHandler_DeleteConnection(t *testing.T) {
 			env := newAPIEnv(t)
 			id := tt.setup(t, env)
 
-			rec := doRequest(t, env.router, http.MethodDelete, api.PathConnections+"/"+id, nil, "")
+			rec := doRequest(t, env.handler, http.MethodDelete, api.PathConnections+"/"+id, nil, "")
 			assertStatus(t, rec, tt.wantStatus)
 
 			if tt.bodySubstr != "" {
@@ -378,6 +384,16 @@ func TestHandler_PostQuery(t *testing.T) {
 			bodySubstr: "missing required fields",
 		},
 		{
+			name: "read-only violation",
+			setup: func(t *testing.T, env apiEnv) string {
+				dbPath := testutil.SeedSQLiteFile(t, `CREATE TABLE items (id INTEGER PRIMARY KEY);`)
+				registerSQLiteConnection(t, env, "query_conn", dbPath)
+				return `{"id":"query_conn","sql":"DELETE FROM items"}`
+			},
+			wantStatus: http.StatusBadRequest,
+			bodySubstr: "read-only violation",
+		},
+		{
 			name: "invalid sql",
 			setup: func(t *testing.T, env apiEnv) string {
 				dbPath := testutil.SeedSQLiteFile(t, `CREATE TABLE items (id INTEGER PRIMARY KEY);`)
@@ -400,7 +416,7 @@ func TestHandler_PostQuery(t *testing.T) {
 			t.Parallel()
 
 			env := newAPIEnv(t)
-			rec := doJSON(t, env.router, http.MethodPost, api.PathQuery, tt.setup(t, env))
+			rec := doJSON(t, env.handler, http.MethodPost, api.PathQuery, tt.setup(t, env))
 			assertStatus(t, rec, tt.wantStatus)
 
 			if tt.bodySubstr != "" {
@@ -501,7 +517,7 @@ func TestHandler_PostFederatedQuery(t *testing.T) {
 			t.Parallel()
 
 			env := newAPIEnv(t)
-			rec := doJSON(t, env.router, http.MethodPost, api.PathFederatedQuery, tt.setup(t, env))
+			rec := doJSON(t, env.handler, http.MethodPost, api.PathFederatedQuery, tt.setup(t, env))
 			assertStatus(t, rec, tt.wantStatus)
 
 			if tt.bodySubstr != "" {
@@ -512,4 +528,75 @@ func TestHandler_PostFederatedQuery(t *testing.T) {
 			}
 		})
 	}
+}
+
+type failingStore struct {
+	inner *storage.Store
+}
+
+func (s *failingStore) GetAllConnections(ctx context.Context) ([]storage.SavedConnection, error) {
+	return s.inner.GetAllConnections(ctx)
+}
+
+func (s *failingStore) SaveConnection(context.Context, storage.SavedConnection) error {
+	return errors.New("forced storage failure")
+}
+
+func (s *failingStore) GetConnection(ctx context.Context, id string) (storage.SavedConnection, bool, error) {
+	return s.inner.GetConnection(ctx, id)
+}
+
+func (s *failingStore) RemoveConnection(ctx context.Context, id string) error {
+	return s.inner.RemoveConnection(ctx, id)
+}
+
+func TestHandler_PostConnection_StorageRollback(t *testing.T) {
+	store := storage.NewStore(testutil.OpenSQLiteMemory(t))
+	if err := store.InitializeSchema(); err != nil {
+		t.Fatalf("initialize schema: %v", err)
+	}
+
+	reg := registry.NewRegistry()
+	cm := connectionmanager.NewConnectionManager(reg)
+	handler := api.NewRouter(cm, &failingStore{inner: store}, executor.NewExecutor(reg, config.DefaultMaxQueryRows), executor.NewFederatedExecutor(reg, config.DefaultMaxQueryRows))
+
+	driverName := testutil.RegisterNamedMockDriver(t, "rollback", false)
+	rec := doJSON(t, handler, http.MethodPost, api.PathConnections, map[string]string{
+		"id": "conn1", "driver": driverName, "host": "localhost:3306",
+	})
+	assertStatus(t, rec, http.StatusInternalServerError)
+
+	if _, found := reg.Fetch("conn1"); found {
+		t.Fatal("expected registry entry to be rolled back after storage failure")
+	}
+}
+
+func TestHandler_PostQuery_RowLimitExceeded(t *testing.T) {
+	env := newAPIEnvWithMaxRows(t, 1)
+	dbPath := testutil.SeedSQLiteFile(t, `
+CREATE TABLE items (
+	id INTEGER PRIMARY KEY,
+	name TEXT NOT NULL
+);
+INSERT INTO items (name) VALUES ('alpha'), ('beta');
+`)
+	registerSQLiteConnection(t, env, "limited", dbPath)
+
+	rec := doJSON(t, env.handler, http.MethodPost, api.PathQuery, map[string]string{
+		"id":  "limited",
+		"sql": "SELECT id, name FROM items ORDER BY id ASC",
+	})
+	assertStatus(t, rec, http.StatusBadRequest)
+	assertJSONErrorContains(t, rec, "query returned more than 1 rows")
+}
+
+func TestHandler_PostFederatedQuery_RowLimitExceeded(t *testing.T) {
+	env := newAPIEnvWithMaxRows(t, 1)
+	registerFederatedSQLiteConnections(t, env)
+
+	rec := doJSON(t, env.handler, http.MethodPost, api.PathFederatedQuery, map[string]string{
+		"sql": `SELECT u.id, u.name, o.total FROM billing.users u JOIN analytics.orders o ON u.id = o.user_id WHERE u.active = 1`,
+	})
+	assertStatus(t, rec, http.StatusBadRequest)
+	assertJSONErrorContains(t, rec, "query returned more than 1 rows")
 }

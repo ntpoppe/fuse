@@ -14,6 +14,7 @@ var (
 	errUnion              = errors.New("UNION is not supported yet; " + hintFederatedSelect)
 	errDistinct           = errors.New("SELECT DISTINCT is not supported yet; " + hintFederatedSelect)
 	errGroupBy            = errors.New("GROUP BY is not supported yet; " + hintFederatedSelect)
+	errHaving             = errors.New("HAVING is not supported yet; " + hintFederatedSelect)
 	errOrderBy            = errors.New("ORDER BY is not supported yet; " + hintFederatedSelect)
 	errSelectStar         = errors.New("SELECT * is not supported; list columns explicitly, e.g. u.id, u.name")
 	errSelectExpression   = errors.New("SELECT expressions are not supported yet; use qualified column names only")

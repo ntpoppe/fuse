@@ -27,7 +27,8 @@ func Plan(q *ParsedQuery) (*FederatedPlan, error) {
 		Limit:      q.Limit,
 	}
 	if q.Join != nil {
-		plan.Join = *q.Join
+		join := *q.Join
+		plan.Join = &join
 	}
 
 	return plan, nil

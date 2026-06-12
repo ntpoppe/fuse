@@ -3,14 +3,14 @@ package api
 import (
 	"net/http"
 
-	connectionmanager "github.com/ntpoppe/fuse/internal/connection_manager"
+	"github.com/ntpoppe/fuse/internal/driver"
 	"github.com/ntpoppe/fuse/internal/executor"
 	"github.com/ntpoppe/fuse/internal/storage"
 )
 
 type Handler struct {
-	cm      *connectionmanager.ConnectionManager
-	store   *storage.Store
+	cr      ConnectionRegistrar
+	store   ConnectionStore
 	exec    *executor.Executor
 	fedExec *executor.FederatedExecutor
 }
@@ -37,15 +37,15 @@ type federatedQueryPayload struct {
 }
 
 func NewRouter(
-	cm *connectionmanager.ConnectionManager,
-	store *storage.Store,
+	cr ConnectionRegistrar,
+	store ConnectionStore,
 	exec *executor.Executor,
 	fedExec *executor.FederatedExecutor,
-) *http.ServeMux {
+) http.Handler {
 	router := http.ServeMux{}
 
 	h := &Handler{
-		cm:      cm,
+		cr:      cr,
 		store:   store,
 		exec:    exec,
 		fedExec: fedExec,
@@ -79,7 +79,7 @@ func (h *Handler) GetConnections(w http.ResponseWriter, r *http.Request) {
 		response = append(response, connectionResponse{
 			ID:     conn.ID,
 			Driver: conn.Driver,
-			Host:   conn.Host,
+			Host:   driver.RedactHost(conn.Driver, conn.Host),
 		})
 	}
 
@@ -90,7 +90,10 @@ func (h *Handler) GetConnections(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) PostConnection(w http.ResponseWriter, r *http.Request) {
 	var payload connectionPayload
-	if err := decodeJSON(r, &payload); err != nil {
+	if err := decodeJSON(w, r, &payload); err != nil {
+		if decodeJSONError(w, err) {
+			return
+		}
 		writeAPIError(w, http.StatusBadRequest, errInvalidJSON)
 		return
 	}
@@ -100,7 +103,7 @@ func (h *Handler) PostConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.cm.RegisterConnection(payload.ID, payload.Driver, payload.Host); err != nil {
+	if err := h.cr.RegisterConnection(payload.ID, payload.Driver, payload.Host); err != nil {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -111,7 +114,7 @@ func (h *Handler) PostConnection(w http.ResponseWriter, r *http.Request) {
 		Host:   payload.Host,
 	}
 	if err := h.store.SaveConnection(r.Context(), connRecord); err != nil {
-		_ = h.cm.RemoveConnection(payload.ID)
+		_ = h.cr.RemoveConnection(payload.ID)
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -132,14 +135,14 @@ func (h *Handler) DeleteConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.cm.RemoveConnection(id); err != nil {
+	if err := h.cr.RemoveConnection(id); err != nil {
 		writeError(w, err)
 		return
 	}
 
 	if err := h.store.RemoveConnection(r.Context(), id); err != nil {
 		if saved.ID != "" {
-			_ = h.cm.RegisterConnection(saved.ID, saved.Driver, saved.Host)
+			_ = h.cr.RegisterConnection(saved.ID, saved.Driver, saved.Host)
 		}
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -150,7 +153,10 @@ func (h *Handler) DeleteConnection(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) PostQuery(w http.ResponseWriter, r *http.Request) {
 	var payload queryPayload
-	if err := decodeJSON(r, &payload); err != nil {
+	if err := decodeJSON(w, r, &payload); err != nil {
+		if decodeJSONError(w, err) {
+			return
+		}
 		writeAPIError(w, http.StatusBadRequest, errInvalidJSON)
 		return
 	}
@@ -173,7 +179,10 @@ func (h *Handler) PostQuery(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) PostFederatedQuery(w http.ResponseWriter, r *http.Request) {
 	var payload federatedQueryPayload
-	if err := decodeJSON(r, &payload); err != nil {
+	if err := decodeJSON(w, r, &payload); err != nil {
+		if decodeJSONError(w, err) {
+			return
+		}
 		writeAPIError(w, http.StatusBadRequest, errInvalidJSON)
 		return
 	}

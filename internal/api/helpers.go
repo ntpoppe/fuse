@@ -4,17 +4,28 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/ntpoppe/fuse/internal/fuseerr"
 )
+
+const maxRequestBodyBytes = 1 << 20 // 1 MiB
 
 type errorResponse struct {
 	Error string `json:"error"`
 }
 
-func decodeJSON(r *http.Request, dst any) error {
+func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	return json.NewDecoder(r.Body).Decode(dst)
+}
+
+func decodeJSONError(w http.ResponseWriter, err error) bool {
+	var maxErr *http.MaxBytesError
+	if errors.As(err, &maxErr) {
+		writeAPIError(w, http.StatusRequestEntityTooLarge, "request body too large")
+		return true
+	}
+	return false
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) error {
@@ -36,6 +47,8 @@ func writeError(w http.ResponseWriter, err error) {
 		status = http.StatusBadRequest
 	case errors.Is(err, fuseerr.ErrQueryRowLimit):
 		status = http.StatusBadRequest
+	case errors.Is(err, fuseerr.ErrReadOnly):
+		status = http.StatusBadRequest
 	}
 	writeAPIError(w, status, err.Error())
 }
@@ -48,10 +61,10 @@ func writeFederatedError(w http.ResponseWriter, err error) {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
 	default:
 		status := http.StatusBadRequest
-		msg := err.Error()
-		if strings.Contains(msg, "query leg") || strings.Contains(msg, "render leg") {
+		var legErr fuseerr.LegExecutionError
+		if errors.As(err, &legErr) {
 			status = http.StatusInternalServerError
 		}
-		writeAPIError(w, status, msg)
+		writeAPIError(w, status, err.Error())
 	}
 }

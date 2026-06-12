@@ -1,13 +1,12 @@
 package driver
 
 import (
-	"fmt"
+	"net/url"
 	"strings"
 )
 
 const (
-	sqliteFilePrefix     = "file:"
-	sqliteReadOnlySuffix = "?mode=ro"
+	sqliteFilePrefix = "file:"
 )
 
 func NormalizeHost(driverName, host string) string {
@@ -15,7 +14,16 @@ func NormalizeHost(driverName, host string) string {
 		return host
 	}
 
-	cleaned := strings.TrimPrefix(host, sqliteFilePrefix)
-	cleaned = strings.TrimSuffix(cleaned, sqliteReadOnlySuffix)
-	return fmt.Sprintf("%s%s%s", sqliteFilePrefix, cleaned, sqliteReadOnlySuffix)
+	rest := strings.TrimPrefix(host, sqliteFilePrefix)
+	filePart := rest
+	queryPart := ""
+	if idx := strings.Index(rest, "?"); idx >= 0 {
+		filePart = rest[:idx]
+		queryPart = rest[idx+1:]
+	}
+
+	vals, _ := url.ParseQuery(queryPart)
+	vals.Set("mode", "ro")
+
+	return sqliteFilePrefix + filePart + "?" + vals.Encode()
 }

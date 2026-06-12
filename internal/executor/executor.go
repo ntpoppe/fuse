@@ -2,7 +2,6 @@ package executor
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/ntpoppe/fuse/internal/fuseerr"
 	"github.com/ntpoppe/fuse/internal/registry"
@@ -27,7 +26,7 @@ func (e *Executor) ExecuteQuery(ctx context.Context, id, sql string) ([]map[stri
 	}
 
 	if err := target.Dialect().ValidateReadOnly(sql); err != nil {
-		return nil, fmt.Errorf("read-only violation: %w", err)
+		return nil, fuseerr.ReadOnlyError{Cause: err}
 	}
 
 	return target.Query(ctx, sql, nil, e.maxQueryRows)

@@ -58,7 +58,7 @@ type QueryLeg struct {
 // FederatedPlan is the execution plan: legs to run plus how to join them.
 type FederatedPlan struct {
 	Legs       []QueryLeg  // One leg per connection involved.
-	Join       JoinSpec    // How to combine leg results.
+	Join       *JoinSpec   // Nil for a single-table query.
 	SelectCols []ColumnRef // Final output columns after the join.
 	Limit      *int        // Row cap applied after joining.
 }

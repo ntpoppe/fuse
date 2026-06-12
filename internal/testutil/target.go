@@ -7,7 +7,8 @@ import (
 )
 
 type StubTarget struct {
-	IDVal string
+	IDVal   string
+	QueryFn func(context.Context, string, []any, int) ([]map[string]any, error)
 }
 
 func NewStubTarget(id string) *StubTarget {
@@ -34,6 +35,9 @@ func (s *StubTarget) Close() error {
 	return nil
 }
 
-func (s *StubTarget) Query(context.Context, string, []any, int) ([]map[string]any, error) {
+func (s *StubTarget) Query(ctx context.Context, query string, args []any, maxRows int) ([]map[string]any, error) {
+	if s.QueryFn != nil {
+		return s.QueryFn(ctx, query, args, maxRows)
+	}
 	return nil, nil
 }

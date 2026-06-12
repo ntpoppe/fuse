@@ -18,6 +18,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "valid config",
 			cfg: config.Config{
+				Host:         config.DefaultHost,
 				Port:         8080,
 				StateDBPath:  storage.DefaultStateDBPath,
 				MaxQueryRows: config.DefaultMaxQueryRows,
@@ -26,6 +27,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "privileged port allowed",
 			cfg: config.Config{
+				Host:         config.DefaultHost,
 				Port:         80,
 				StateDBPath:  storage.DefaultStateDBPath,
 				MaxQueryRows: config.DefaultMaxQueryRows,
@@ -34,6 +36,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "port too low",
 			cfg: config.Config{
+				Host:         config.DefaultHost,
 				Port:         0,
 				StateDBPath:  storage.DefaultStateDBPath,
 				MaxQueryRows: config.DefaultMaxQueryRows,
@@ -43,6 +46,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "port too high",
 			cfg: config.Config{
+				Host:         config.DefaultHost,
 				Port:         99999,
 				StateDBPath:  storage.DefaultStateDBPath,
 				MaxQueryRows: config.DefaultMaxQueryRows,
@@ -52,6 +56,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "empty state db path",
 			cfg: config.Config{
+				Host:         config.DefaultHost,
 				Port:         8080,
 				StateDBPath:  "",
 				MaxQueryRows: config.DefaultMaxQueryRows,
@@ -61,9 +66,20 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "max query rows too low",
 			cfg: config.Config{
+				Host:         config.DefaultHost,
 				Port:         8080,
 				StateDBPath:  storage.DefaultStateDBPath,
 				MaxQueryRows: 0,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid host",
+			cfg: config.Config{
+				Host:         "not-a-host",
+				Port:         8080,
+				StateDBPath:  storage.DefaultStateDBPath,
+				MaxQueryRows: config.DefaultMaxQueryRows,
 			},
 			wantErr: true,
 		},

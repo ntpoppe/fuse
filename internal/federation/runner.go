@@ -49,10 +49,17 @@ func (r *Runner) Run(ctx context.Context, plan *FederatedPlan) ([]map[string]any
 		return projectLegRows(legRows[0], plan.SelectCols, plan.Limit), nil
 	}
 
-	return HashJoin(legRows[0], legRows[1], plan.Join, plan.SelectCols, plan.Limit)
+	if plan.Join == nil {
+		return nil, errors.New("two-leg plan missing join spec")
+	}
+
+	return HashJoin(legRows[0], legRows[1], *plan.Join, plan.SelectCols, plan.Limit)
 }
 
 func (r *Runner) runLegsParallel(ctx context.Context, legs []QueryLeg) ([][]map[string]any, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	results := make([][]map[string]any, len(legs))
 	errs := make([]error, len(legs))
 
@@ -61,13 +68,26 @@ func (r *Runner) runLegsParallel(ctx context.Context, legs []QueryLeg) ([][]map[
 		wg.Add(1)
 		go func(i int, leg QueryLeg) {
 			defer wg.Done()
+			if ctx.Err() != nil {
+				errs[i] = ctx.Err()
+				return
+			}
 			rows, err := r.runLeg(ctx, leg)
 			results[i] = rows
 			errs[i] = err
+			if err != nil {
+				cancel()
+			}
 		}(i, leg)
 	}
 	wg.Wait()
 
+	for _, err := range errs {
+		if err == nil || errors.Is(err, context.Canceled) {
+			continue
+		}
+		return nil, err
+	}
 	for _, err := range errs {
 		if err != nil {
 			return nil, err
@@ -85,12 +105,18 @@ func (r *Runner) runLeg(ctx context.Context, leg QueryLeg) ([]map[string]any, er
 
 	sql, args, err := target.Dialect().RenderSelect(SelectLegForDriver(leg))
 	if err != nil {
-		return nil, fmt.Errorf("render leg %q: %w", leg.ConnectionID, err)
+		return nil, fuseerr.LegExecutionError{
+			ConnectionID: leg.ConnectionID,
+			Cause:        fmt.Errorf("render leg: %w", err),
+		}
 	}
 
 	rows, err := target.Query(ctx, sql, args, r.maxQueryRows)
 	if err != nil {
-		return nil, fmt.Errorf("query leg %q: %w", leg.ConnectionID, err)
+		if errors.Is(err, fuseerr.ErrQueryRowLimit) {
+			return nil, err
+		}
+		return nil, fuseerr.LegExecutionError{ConnectionID: leg.ConnectionID, Cause: err}
 	}
 
 	return rows, nil

@@ -12,6 +12,6 @@ func backtickQuoteIdent(name string) string {
 	return "`" + escaped + "`"
 }
 
-func questionPlaceholder(int) string {
+func questionPlaceholder(_ int) string {
 	return "?"
 }

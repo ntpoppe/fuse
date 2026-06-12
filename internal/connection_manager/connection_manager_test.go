@@ -2,6 +2,7 @@ package connectionmanager_test
 
 import (
 	"strings"
+	"sync"
 	"testing"
 
 	connectionmanager "github.com/ntpoppe/fuse/internal/connection_manager"
@@ -105,6 +106,44 @@ func TestConnectionManager_RegisterConnection_DuplicateID(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("error = %q, want duplicate id message", err.Error())
+	}
+}
+
+func TestConnectionManager_RegisterConnection_ConcurrentDuplicate(t *testing.T) {
+	e := newEnv(t)
+	driverName := testutil.RegisterNamedMockDriver(t, "concurrent", false)
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- e.cm.RegisterConnection("db_1", driverName, "localhost:3306")
+		}()
+	}
+	wg.Wait()
+	close(errs)
+
+	var success, duplicate int
+	for err := range errs {
+		if err == nil {
+			success++
+			continue
+		}
+		if strings.Contains(err.Error(), "already exists") {
+			duplicate++
+			continue
+		}
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if success != 1 || duplicate != 1 {
+		t.Fatalf("success = %d duplicate = %d, want 1 each", success, duplicate)
+	}
+
+	if _, found := e.reg.Fetch("db_1"); !found {
+		t.Fatal("expected exactly one connection in registry")
 	}
 }
 

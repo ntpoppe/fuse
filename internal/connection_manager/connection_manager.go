@@ -2,6 +2,7 @@ package connectionmanager
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/ntpoppe/fuse/internal/driver"
 	"github.com/ntpoppe/fuse/internal/fuseerr"
@@ -9,14 +10,18 @@ import (
 )
 
 type ConnectionManager struct {
+	mu  sync.Mutex
 	reg *registry.Registry
 }
 
 func NewConnectionManager(reg *registry.Registry) *ConnectionManager {
-	return &ConnectionManager{reg}
+	return &ConnectionManager{reg: reg}
 }
 
 func (cm *ConnectionManager) RegisterConnection(id, driverName, host string) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
 	if _, exists := cm.reg.Fetch(id); exists {
 		return fuseerr.AlreadyExistsError{ID: id}
 	}
@@ -31,6 +36,9 @@ func (cm *ConnectionManager) RegisterConnection(id, driverName, host string) err
 }
 
 func (cm *ConnectionManager) RemoveConnection(id string) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
 	target, exists := cm.reg.Fetch(id)
 	if !exists {
 		return fuseerr.NotFoundError{ID: id}

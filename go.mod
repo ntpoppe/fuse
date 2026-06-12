@@ -3,9 +3,14 @@ module github.com/ntpoppe/fuse
 go 1.26.2
 
 require (
+	github.com/go-sql-driver/mysql v1.10.0
+	modernc.org/sqlite v1.50.1
+	vitess.io/vitess v0.24.1
+)
+
+require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/go-sql-driver/mysql v1.10.0 // indirect
 	github.com/golang/glog v1.2.5 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/lmittmann/tint v1.1.3 // indirect
@@ -21,6 +26,4 @@ require (
 	modernc.org/libc v1.72.3 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.50.1 // indirect
-	vitess.io/vitess v0.24.1 // indirect
 )

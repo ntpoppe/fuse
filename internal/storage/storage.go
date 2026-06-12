@@ -30,9 +30,7 @@ func (s *Store) InitializeSchema() error {
 }
 
 func (s *Store) SaveConnection(ctx context.Context, conn SavedConnection) error {
-	query := fmt.Sprintf("INSERT OR REPLACE INTO %s (id, driver, host) VALUES (?, ?, ?);", connectionsTable)
-
-	_, err := s.db.ExecContext(ctx, query, conn.ID, conn.Driver, conn.Host)
+	_, err := s.db.ExecContext(ctx, querySaveConnection, conn.ID, conn.Driver, conn.Host)
 	if err != nil {
 		return fmt.Errorf("save connection %q: %w", conn.ID, err)
 	}
@@ -40,10 +38,8 @@ func (s *Store) SaveConnection(ctx context.Context, conn SavedConnection) error 
 }
 
 func (s *Store) GetConnection(ctx context.Context, id string) (SavedConnection, bool, error) {
-	query := fmt.Sprintf("SELECT id, driver, host FROM %s WHERE id = ?;", connectionsTable)
-
 	var conn SavedConnection
-	err := s.db.QueryRowContext(ctx, query, id).Scan(&conn.ID, &conn.Driver, &conn.Host)
+	err := s.db.QueryRowContext(ctx, queryGetConnection, id).Scan(&conn.ID, &conn.Driver, &conn.Host)
 	if errors.Is(err, sql.ErrNoRows) {
 		return SavedConnection{}, false, nil
 	}
@@ -54,9 +50,7 @@ func (s *Store) GetConnection(ctx context.Context, id string) (SavedConnection, 
 }
 
 func (s *Store) RemoveConnection(ctx context.Context, id string) error {
-	query := fmt.Sprintf("DELETE FROM %s WHERE id = ?;", connectionsTable)
-
-	_, err := s.db.ExecContext(ctx, query, id)
+	_, err := s.db.ExecContext(ctx, queryRemoveConnection, id)
 	if err != nil {
 		return fmt.Errorf("remove connection %q: %w", id, err)
 	}
@@ -64,9 +58,7 @@ func (s *Store) RemoveConnection(ctx context.Context, id string) error {
 }
 
 func (s *Store) GetAllConnections(ctx context.Context) ([]SavedConnection, error) {
-	query := fmt.Sprintf("SELECT id, driver, host FROM %s;", connectionsTable)
-
-	rows, err := s.db.QueryContext(ctx, query)
+	rows, err := s.db.QueryContext(ctx, queryListConnections)
 	if err != nil {
 		return nil, fmt.Errorf("list connections: %w", err)
 	}

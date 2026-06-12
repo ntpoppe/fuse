@@ -79,7 +79,7 @@ func validateSelectShape(sel *sqlparser.Select) error {
 		return errOrderBy
 	}
 	if sel.Having != nil {
-		return errGroupBy
+		return errHaving
 	}
 	return nil
 }
@@ -132,11 +132,11 @@ func parseJoinFrom(join *sqlparser.JoinTableExpr) ([]QualifiedTable, *JoinSpec, 
 }
 
 func hasNestedJoin(expr sqlparser.TableExpr) bool {
-	switch e := expr.(type) {
+	switch expr.(type) {
 	case *sqlparser.JoinTableExpr:
 		return true
 	case *sqlparser.AliasedTableExpr:
-		if _, ok := e.Expr.(*sqlparser.DerivedTable); ok {
+		if _, ok := expr.(*sqlparser.AliasedTableExpr).Expr.(*sqlparser.DerivedTable); ok {
 			return true
 		}
 	}

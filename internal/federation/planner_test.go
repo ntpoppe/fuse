@@ -42,7 +42,7 @@ func TestPlanTwoTableJoin(t *testing.T) {
 		t.Fatalf("right where = %+v, want none", right.Where)
 	}
 
-	if plan.Join.LeftAlias != "u" || plan.Join.RightAlias != "o" {
+	if plan.Join == nil || plan.Join.LeftAlias != "u" || plan.Join.RightAlias != "o" {
 		t.Fatalf("join = %+v", plan.Join)
 	}
 	if plan.Limit == nil || *plan.Limit != 100 {
@@ -99,8 +99,8 @@ func TestPlanSingleTable(t *testing.T) {
 	if len(plan.Legs[0].Where) != 1 {
 		t.Fatalf("where = %+v", plan.Legs[0].Where)
 	}
-	if plan.Join != (JoinSpec{}) {
-		t.Fatalf("join = %+v, want zero value", plan.Join)
+	if plan.Join != nil {
+		t.Fatalf("join = %+v, want nil", plan.Join)
 	}
 }
 
