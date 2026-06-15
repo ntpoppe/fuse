@@ -124,6 +124,17 @@ func TestConfig_Validate(t *testing.T) {
 	}
 }
 
+func TestApplyEnv_CORSOrigins(t *testing.T) {
+	t.Setenv("FUSE_CORS_ORIGINS", "http://localhost:8080, http://127.0.0.1:8080")
+
+	cfg := config.NewConfig()
+	config.ApplyEnv(cfg)
+
+	if len(cfg.CORSOrigins) != 2 {
+		t.Fatalf("CORS origins = %v, want 2", cfg.CORSOrigins)
+	}
+}
+
 func TestApplyDemoDefaults(t *testing.T) {
 	t.Parallel()
 
