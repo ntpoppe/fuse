@@ -10,11 +10,12 @@ import (
 )
 
 const (
-	DefaultHost           = "127.0.0.1"
-	DefaultPort           = 5000
-	DefaultMaxQueryRows   = 10_000
-	DefaultDemoSQLitePath = "/data/shop.db"
-	DefaultDemoMySQLDSN   = "demo:demo@tcp(mysql:3306)/fuse_test"
+	DefaultHost              = "127.0.0.1"
+	DefaultPort              = 5000
+	DefaultMaxQueryRows      = 10_000
+	DefaultDemoMaxQueryRows  = 1_000
+	DefaultDemoSQLitePath    = "/data/shop.db"
+	DefaultDemoMySQLDSN      = "demo:demo@tcp(mysql:3306)/fuse_test"
 )
 
 var DefaultDemoCORSOrigins = []string{
@@ -60,10 +61,15 @@ func ApplyEnv(cfg *Config) {
 }
 
 func ApplyDemoDefaults(cfg *Config) {
-	if !cfg.DemoMode || len(cfg.CORSOrigins) > 0 {
+	if !cfg.DemoMode {
 		return
 	}
-	cfg.CORSOrigins = append([]string(nil), DefaultDemoCORSOrigins...)
+	if cfg.MaxQueryRows == DefaultMaxQueryRows {
+		cfg.MaxQueryRows = DefaultDemoMaxQueryRows
+	}
+	if len(cfg.CORSOrigins) == 0 {
+		cfg.CORSOrigins = append([]string(nil), DefaultDemoCORSOrigins...)
+	}
 }
 
 func SplitCSV(value string) []string {

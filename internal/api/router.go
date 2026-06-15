@@ -5,15 +5,16 @@ import (
 
 	"github.com/ntpoppe/fuse/internal/driver"
 	"github.com/ntpoppe/fuse/internal/executor"
+	"github.com/ntpoppe/fuse/internal/runtime"
 	"github.com/ntpoppe/fuse/internal/storage"
 )
 
 type Handler struct {
-	cr        ConnectionRegistrar
-	store     ConnectionStore
-	exec      *executor.Executor
-	fedExec   *executor.FederatedExecutor
-	demoMode  bool
+	cr      ConnectionRegistrar
+	store   ConnectionStore
+	exec    *executor.Executor
+	fedExec *executor.FederatedExecutor
+	http    runtime.HTTPProfile
 }
 
 type connectionPayload struct {
@@ -42,16 +43,16 @@ func NewRouter(
 	store ConnectionStore,
 	exec *executor.Executor,
 	fedExec *executor.FederatedExecutor,
-	demoMode bool,
+	httpProfile runtime.HTTPProfile,
 ) http.Handler {
 	router := http.ServeMux{}
 
 	h := &Handler{
-		cr:       cr,
-		store:    store,
-		exec:     exec,
-		fedExec:  fedExec,
-		demoMode: demoMode,
+		cr:      cr,
+		store:   store,
+		exec:    exec,
+		fedExec: fedExec,
+		http:    httpProfile,
 	}
 
 	router.HandleFunc("GET "+PathHealth, h.GetHealth)
@@ -92,13 +93,13 @@ func (h *Handler) GetConnections(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) PostConnection(w http.ResponseWriter, r *http.Request) {
-	if h.demoMode {
-		writeAPIError(w, http.StatusForbidden, errDemoModeConnections)
+	if !h.http.AllowConnectionChanges {
+		writeAPIError(w, http.StatusForbidden, errConnectionChangesDisabled)
 		return
 	}
 
 	var payload connectionPayload
-	if err := decodeJSON(w, r, &payload); err != nil {
+	if err := decodeJSON(w, r, h.http.MaxBodyBytes, &payload); err != nil {
 		if decodeJSONError(w, err) {
 			return
 		}
@@ -131,8 +132,8 @@ func (h *Handler) PostConnection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DeleteConnection(w http.ResponseWriter, r *http.Request) {
-	if h.demoMode {
-		writeAPIError(w, http.StatusForbidden, errDemoModeConnections)
+	if !h.http.AllowConnectionChanges {
+		writeAPIError(w, http.StatusForbidden, errConnectionChangesDisabled)
 		return
 	}
 
@@ -166,7 +167,7 @@ func (h *Handler) DeleteConnection(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) PostQuery(w http.ResponseWriter, r *http.Request) {
 	var payload queryPayload
-	if err := decodeJSON(w, r, &payload); err != nil {
+	if err := decodeJSON(w, r, h.http.MaxBodyBytes, &payload); err != nil {
 		if decodeJSONError(w, err) {
 			return
 		}
@@ -192,7 +193,7 @@ func (h *Handler) PostQuery(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) PostFederatedQuery(w http.ResponseWriter, r *http.Request) {
 	var payload federatedQueryPayload
-	if err := decodeJSON(w, r, &payload); err != nil {
+	if err := decodeJSON(w, r, h.http.MaxBodyBytes, &payload); err != nil {
 		if decodeJSONError(w, err) {
 			return
 		}

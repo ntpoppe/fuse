@@ -14,11 +14,12 @@ import (
 
 	"github.com/ntpoppe/fuse/internal/api"
 	"github.com/ntpoppe/fuse/internal/config"
-	"github.com/ntpoppe/fuse/internal/demo"
 	connectionmanager "github.com/ntpoppe/fuse/internal/connection_manager"
+	"github.com/ntpoppe/fuse/internal/demo"
 	"github.com/ntpoppe/fuse/internal/driver"
 	"github.com/ntpoppe/fuse/internal/executor"
 	"github.com/ntpoppe/fuse/internal/registry"
+	"github.com/ntpoppe/fuse/internal/runtime"
 	"github.com/ntpoppe/fuse/internal/storage"
 )
 
@@ -45,10 +46,11 @@ func main() {
 		log.Fatalf("initialize state database: %v", err)
 	}
 
+	profile := runtime.FromConfig(cfg)
 	reg := registry.NewRegistry()
 	cm := connectionmanager.NewConnectionManager(reg)
-	exec := executor.NewExecutor(reg, cfg.MaxQueryRows)
-	fedExec := executor.NewFederatedExecutor(reg, cfg.MaxQueryRows)
+	exec := executor.NewExecutor(reg, profile.MaxQueryRows)
+	fedExec := executor.NewFederatedExecutor(reg, profile.MaxQueryRows)
 
 	initCtx, initCancel := context.WithTimeout(context.Background(), restoreTimeout)
 	defer initCancel()
@@ -71,8 +73,8 @@ func main() {
 		}
 	}
 
-	router := api.NewRouter(cm, store, exec, fedExec, cfg.DemoMode)
-	handler := api.WithCORS(cfg.CORSOrigins, router)
+	router := api.NewRouter(cm, store, exec, fedExec, profile.HTTP)
+	handler := runtime.WrapHandler(router, profile)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),

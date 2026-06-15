@@ -16,6 +16,7 @@ import (
 	"github.com/ntpoppe/fuse/internal/driver"
 	"github.com/ntpoppe/fuse/internal/executor"
 	"github.com/ntpoppe/fuse/internal/registry"
+	"github.com/ntpoppe/fuse/internal/runtime"
 	"github.com/ntpoppe/fuse/internal/storage"
 	"github.com/ntpoppe/fuse/internal/testutil"
 )
@@ -31,10 +32,10 @@ func newAPIEnv(t *testing.T) apiEnv {
 }
 
 func newAPIEnvWithMaxRows(t *testing.T, maxRows int) apiEnv {
-	return newAPIEnvWithOptions(t, maxRows, false)
+	return newAPIEnvWithHTTPProfile(t, maxRows, runtime.HTTPProfile{AllowConnectionChanges: true})
 }
 
-func newAPIEnvWithOptions(t *testing.T, maxRows int, demoMode bool) apiEnv {
+func newAPIEnvWithHTTPProfile(t *testing.T, maxRows int, httpProfile runtime.HTTPProfile) apiEnv {
 	t.Helper()
 
 	store := storage.NewStore(testutil.OpenSQLiteMemory(t))
@@ -47,8 +48,12 @@ func newAPIEnvWithOptions(t *testing.T, maxRows int, demoMode bool) apiEnv {
 	exec := executor.NewExecutor(reg, maxRows)
 	fedExec := executor.NewFederatedExecutor(reg, maxRows)
 
+	if httpProfile.MaxBodyBytes == 0 {
+		httpProfile.MaxBodyBytes = 1 << 20
+	}
+
 	return apiEnv{
-		handler: api.NewRouter(cm, store, exec, fedExec, demoMode),
+		handler: api.NewRouter(cm, store, exec, fedExec, httpProfile),
 		store:  store,
 		cm:     cm,
 	}
@@ -240,27 +245,27 @@ func TestHandler_PostConnection(t *testing.T) {
 	}
 }
 
-func TestHandler_PostConnection_DemoMode(t *testing.T) {
+func TestHandler_PostConnection_FixedConnections(t *testing.T) {
 	t.Parallel()
 
-	env := newAPIEnvWithOptions(t, config.DefaultMaxQueryRows, true)
+	env := newAPIEnvWithHTTPProfile(t, config.DefaultMaxQueryRows, runtime.HTTPProfile{AllowConnectionChanges: false, MaxBodyBytes: 1 << 20})
 	driverName := testutil.RegisterNamedMockDriver(t, "demo-blocked", false)
 
 	rec := doJSON(t, env.handler, http.MethodPost, api.PathConnections, map[string]string{
 		"id": "conn1", "driver": driverName, "host": "localhost:3306",
 	})
 	assertStatus(t, rec, http.StatusForbidden)
-	assertJSONErrorContains(t, rec, "demo mode")
+	assertJSONErrorContains(t, rec, "connection changes")
 }
 
-func TestHandler_DeleteConnection_DemoMode(t *testing.T) {
+func TestHandler_DeleteConnection_FixedConnections(t *testing.T) {
 	t.Parallel()
 
-	env := newAPIEnvWithOptions(t, config.DefaultMaxQueryRows, true)
+	env := newAPIEnvWithHTTPProfile(t, config.DefaultMaxQueryRows, runtime.HTTPProfile{AllowConnectionChanges: false, MaxBodyBytes: 1 << 20})
 
 	rec := doRequest(t, env.handler, http.MethodDelete, api.PathConnections+"/shop", nil, "")
 	assertStatus(t, rec, http.StatusForbidden)
-	assertJSONErrorContains(t, rec, "demo mode")
+	assertJSONErrorContains(t, rec, "connection changes")
 }
 
 func TestHandler_PostConnection_DuplicateID(t *testing.T) {
@@ -585,7 +590,7 @@ func TestHandler_PostConnection_StorageRollback(t *testing.T) {
 
 	reg := registry.NewRegistry()
 	cm := connectionmanager.NewConnectionManager(reg)
-	handler := api.NewRouter(cm, &failingStore{inner: store}, executor.NewExecutor(reg, config.DefaultMaxQueryRows), executor.NewFederatedExecutor(reg, config.DefaultMaxQueryRows), false)
+	handler := api.NewRouter(cm, &failingStore{inner: store}, executor.NewExecutor(reg, config.DefaultMaxQueryRows), executor.NewFederatedExecutor(reg, config.DefaultMaxQueryRows), runtime.HTTPProfile{AllowConnectionChanges: true, MaxBodyBytes: 1 << 20})
 
 	driverName := testutil.RegisterNamedMockDriver(t, "rollback", false)
 	rec := doJSON(t, handler, http.MethodPost, api.PathConnections, map[string]string{

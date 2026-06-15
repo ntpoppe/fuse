@@ -135,6 +135,26 @@ func TestApplyEnv_CORSOrigins(t *testing.T) {
 	}
 }
 
+func TestApplyDemoDefaults_MaxQueryRows(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewConfig()
+	cfg.DemoMode = true
+	config.ApplyDemoDefaults(cfg)
+
+	if cfg.MaxQueryRows != config.DefaultDemoMaxQueryRows {
+		t.Fatalf("MaxQueryRows = %d, want %d", cfg.MaxQueryRows, config.DefaultDemoMaxQueryRows)
+	}
+
+	cfgCustom := config.NewConfig()
+	cfgCustom.DemoMode = true
+	cfgCustom.MaxQueryRows = 500
+	config.ApplyDemoDefaults(cfgCustom)
+	if cfgCustom.MaxQueryRows != 500 {
+		t.Fatalf("MaxQueryRows = %d, want explicit 500 preserved", cfgCustom.MaxQueryRows)
+	}
+}
+
 func TestApplyDemoDefaults(t *testing.T) {
 	t.Parallel()
 

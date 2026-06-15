@@ -8,14 +8,12 @@ import (
 	"github.com/ntpoppe/fuse/internal/fuseerr"
 )
 
-const maxRequestBodyBytes = 1 << 20 // 1 MiB
-
 type errorResponse struct {
 	Error string `json:"error"`
 }
 
-func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
-	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+func decodeJSON(w http.ResponseWriter, r *http.Request, maxBytes int64, dst any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 	return json.NewDecoder(r.Body).Decode(dst)
 }
 
