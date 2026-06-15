@@ -19,9 +19,15 @@
   --mono: ui-monospace, "Cascadia Code", "Segoe UI Mono", monospace;
 }
 
+html {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
-  min-height: 100vh;
+  height: 100%;
+  overflow: hidden;
   font-family: var(--font);
   font-size: 15px;
   line-height: 1.5;
@@ -32,6 +38,7 @@ body {
 }
 
 .header {
+  flex-shrink: 0;
   padding: 1.25rem 1.5rem;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
@@ -51,16 +58,20 @@ body {
 
 .layout {
   flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: 280px 1fr;
+  grid-template-rows: minmax(0, 1fr);
   gap: 0;
-  min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar {
+  min-height: 0;
   padding: 1.25rem;
   border-right: 1px solid var(--border);
   background: var(--surface);
+  overflow-x: hidden;
   overflow-y: auto;
 }
 
@@ -69,12 +80,24 @@ body {
 }
 
 .sidebar h2 {
-  margin: 0 0 0.65rem;
+  margin: 0 0 0.35rem;
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
+}
+
+.section-hint {
+  margin: 0 0 0.65rem;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.section-hint code {
+  font-family: var(--mono);
+  font-size: 0.76rem;
 }
 
 .connections {
@@ -143,11 +166,13 @@ body {
   padding: 0.45rem 0.6rem;
   font: inherit;
   font-size: 0.82rem;
+  line-height: 1.35;
   color: var(--text);
   background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: 4px;
   cursor: pointer;
+  white-space: normal;
 }
 
 .examples button:hover {
@@ -156,14 +181,16 @@ body {
 }
 
 .main {
+  min-height: 0;
   padding: 1.25rem 1.5rem;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto minmax(0, 2fr);
   gap: 0.75rem;
 }
 
 .editor-bar {
+  grid-row: 1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -225,26 +252,30 @@ body {
 }
 
 .sql-editor {
+  grid-row: 2;
+  min-height: 0;
   border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
 }
 
 .sql-editor .CodeMirror {
-  height: auto;
-  min-height: 180px;
+  height: 100%;
   font-family: var(--mono);
   font-size: 0.88rem;
   background: var(--code-bg);
 }
 
 .error {
+  grid-row: 3;
   padding: 0.65rem 0.85rem;
   background: var(--error-bg);
   color: var(--error-text);
   border-radius: 4px;
   font-size: 0.9rem;
   white-space: pre-wrap;
+  max-height: 6rem;
+  overflow-y: auto;
 }
 
 .hidden {
@@ -255,17 +286,31 @@ body {
   color: var(--muted);
 }
 
+.results-wrap {
+  grid-row: 4;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.35rem;
+  overflow: hidden;
+}
+
 .results-meta {
   margin: 0;
   font-size: 0.85rem;
 }
 
 .results {
-  overflow-x: auto;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--code-bg);
 }
 
 .results table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: 0.88rem;
 }
@@ -275,11 +320,16 @@ body {
   padding: 0.45rem 0.65rem;
   text-align: left;
   border: 1px solid var(--border);
+  white-space: nowrap;
 }
 
 .results th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   background: var(--surface);
   font-weight: 600;
+  box-shadow: 0 1px 0 var(--border);
 }
 
 .results tr:nth-child(even) td {
@@ -287,6 +337,7 @@ body {
 }
 
 .footer {
+  flex-shrink: 0;
   padding: 0.75rem 1.5rem;
   border-top: 1px solid var(--border);
   background: var(--surface);
@@ -309,6 +360,7 @@ body {
 @media (max-width: 768px) {
   .layout {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 38%) minmax(0, 1fr);
   }
 
   .sidebar {

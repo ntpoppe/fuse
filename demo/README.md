@@ -67,12 +67,18 @@ Connection add/remove should return **403** in demo mode.
 
 ## Sample schema
 
-| Connection | Driver | Table |
-|------------|--------|-------|
-| `shop` | sqlite | `users` |
-| `warehouse` | mysql | `orders` |
+| Connection | Driver | Table | Rows |
+|------------|--------|-------|------|
+| `shop` | sqlite | `users` | 25 |
+| `warehouse` | mysql | `orders` | 47 |
+
+**shop.users:** id, name, email, active, country, tier, created_at
+
+**warehouse.orders:** id, user_id, product, quantity, total, status, channel, ordered_at
 
 Join key: `shop.users.id = warehouse.orders.user_id`
+
+After changing seed SQL, reset MySQL data: `docker compose down -v` then `docker compose up --build`.
 
 ## Web UI
 

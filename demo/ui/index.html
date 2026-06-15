@@ -27,11 +27,9 @@
         <h2>Schema</h2>
         <dl class="schema">
           <dt>shop.users</dt>
-          <dd>id, name, email, active</dd>
+          <dd>id, name, email, active, country, tier, created_at</dd>
           <dt>warehouse.orders</dt>
-          <dd>id, user_id, total, status</dd>
-          <dt>Join</dt>
-          <dd><code>shop.users.id = warehouse.orders.user_id</code></dd>
+          <dd>id, user_id, product, quantity, total, status, channel, ordered_at</dd>
         </dl>
         <div class="schema-actions">
           <button type="button" id="select-shop-users" class="btn btn-small">All columns: shop.users</button>
@@ -40,8 +38,15 @@
       </section>
 
       <section>
-        <h2>Examples</h2>
-        <ul class="examples" id="examples"></ul>
+        <h2>Federated examples</h2>
+        <p class="section-hint">Join SQLite <code>shop</code> to MySQL <code>warehouse</code>. Use <strong>Run federated</strong>.</p>
+        <ul class="examples" id="federated-examples"></ul>
+      </section>
+
+      <section>
+        <h2>Single-database examples</h2>
+        <p class="section-hint">Query one connection only. Use <strong>Run single</strong>.</p>
+        <ul class="examples" id="single-examples"></ul>
       </section>
     </aside>
 

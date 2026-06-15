@@ -1,40 +1,53 @@
 const API_BASE = window.FUSE_API_BASE ?? "";
 
 const tableQueries = {
-  shopUsers: "SELECT u.id, u.name, u.email, u.active FROM shop.users u LIMIT 100",
-  warehouseOrders: "SELECT o.id, o.user_id, o.total, o.status FROM warehouse.orders o LIMIT 100",
+  shopUsers: "SELECT u.id, u.name, u.email, u.active, u.country, u.tier, u.created_at FROM shop.users u LIMIT 100",
+  warehouseOrders: "SELECT o.id, o.user_id, o.product, o.quantity, o.total, o.status, o.channel, o.ordered_at FROM warehouse.orders o LIMIT 100",
 };
 
-const examples = [
+const federatedExamples = [
   {
-    label: "Federated join: shipped orders",
-    sql: "SELECT u.id, u.name, o.total, o.status FROM shop.users u JOIN warehouse.orders o ON u.id = o.user_id WHERE u.active = 1 AND o.status = 'shipped' LIMIT 100",
-    federated: true,
+    label: "Active users + shipped orders",
+    sql: "SELECT u.id, u.name, o.product, o.total, o.status FROM shop.users u INNER JOIN warehouse.orders o ON u.id = o.user_id WHERE u.active = 1 AND o.status = 'shipped' LIMIT 100",
   },
   {
-    label: "Pending order (Alice)",
-    sql: "SELECT u.name, o.total FROM shop.users u JOIN warehouse.orders o ON u.id = o.user_id WHERE o.status = 'pending' LIMIT 10",
-    federated: true,
+    label: "Gold tier buyers on web channel",
+    sql: "SELECT u.name, u.country, o.product, o.total FROM shop.users u INNER JOIN warehouse.orders o ON u.id = o.user_id WHERE u.tier = 'gold' AND o.channel = 'web' LIMIT 25",
   },
   {
-    label: "Active users only",
-    sql: "SELECT u.id, u.name FROM shop.users u WHERE u.active = 1 LIMIT 10",
-    federated: true,
+    label: "Pending orders with customer names",
+    sql: "SELECT u.name, o.product, o.total, o.ordered_at FROM shop.users u INNER JOIN warehouse.orders o ON u.id = o.user_id WHERE o.status = 'pending' LIMIT 25",
   },
   {
-    label: "Single: active users (shop)",
-    sql: "SELECT id, name, email FROM users WHERE active = 1 ORDER BY id",
+    label: "High-value orders ($100+)",
+    sql: "SELECT u.name, o.product, o.total FROM shop.users u INNER JOIN warehouse.orders o ON u.id = o.user_id WHERE o.total >= 100.00 LIMIT 25",
+  },
+  {
+    label: "Single leg: active US users",
+    sql: "SELECT u.id, u.name, u.tier FROM shop.users u WHERE u.active = 1 AND u.country = 'US' LIMIT 25",
+  },
+];
+
+const singleExamples = [
+  {
+    label: "SQLite shop: all active users with country and tier",
+    sql: "SELECT id, name, email, country, tier FROM users WHERE active = 1 ORDER BY id LIMIT 25",
     connection: "shop",
   },
   {
-    label: "Single: shipped orders (warehouse)",
-    sql: "SELECT id, user_id, total, status FROM orders WHERE status = 'shipped'",
+    label: "SQLite shop: inactive accounts",
+    sql: "SELECT id, name, email, country FROM users WHERE active = 0 ORDER BY id LIMIT 25",
+    connection: "shop",
+  },
+  {
+    label: "MySQL warehouse: high-value orders ($100+)",
+    sql: "SELECT id, user_id, product, total, status FROM orders WHERE total >= 100.00 ORDER BY total DESC LIMIT 25",
     connection: "warehouse",
   },
   {
-    label: "Orders >= 45.00",
-    sql: "SELECT u.name, o.total FROM shop.users u INNER JOIN warehouse.orders o ON u.id = o.user_id WHERE o.total >= 45.00 LIMIT 10",
-    federated: true,
+    label: "MySQL warehouse: cancelled or returned orders",
+    sql: "SELECT id, user_id, product, total, status, channel FROM orders WHERE status = 'cancelled' OR status = 'returned' LIMIT 25",
+    connection: "warehouse",
   },
 ];
 
@@ -44,10 +57,11 @@ const sqlEditorEl = document.getElementById("sql-editor");
 const errorEl = document.getElementById("error");
 const resultsEl = document.getElementById("results");
 const resultsMetaEl = document.getElementById("results-meta");
-const examplesEl = document.getElementById("examples");
+const federatedExamplesEl = document.getElementById("federated-examples");
+const singleExamplesEl = document.getElementById("single-examples");
 
 const sqlEditor = CodeMirror(sqlEditorEl, {
-  value: examples[0].sql,
+  value: federatedExamples[0].sql,
   mode: "text/x-sql",
   theme: "dracula",
   lineNumbers: true,
@@ -55,8 +69,11 @@ const sqlEditor = CodeMirror(sqlEditorEl, {
   indentWithTabs: false,
   indentUnit: 2,
   tabSize: 2,
-  viewportMargin: Infinity,
 });
+
+function refreshEditorLayout() {
+  requestAnimationFrame(() => sqlEditor.refresh());
+}
 
 function getSQL() {
   return sqlEditor.getValue().trim();
@@ -71,10 +88,12 @@ function showError(message) {
   if (!message) {
     errorEl.textContent = "";
     errorEl.classList.add("hidden");
+    refreshEditorLayout();
     return;
   }
   errorEl.textContent = message;
   errorEl.classList.remove("hidden");
+  refreshEditorLayout();
 }
 
 async function api(path, options) {
@@ -230,16 +249,21 @@ function loadTableQuery(sql) {
   showError("");
 }
 
-function initExamples() {
-  for (const ex of examples) {
+function initExampleList(container, items) {
+  for (const ex of items) {
     const li = document.createElement("li");
     const btn = document.createElement("button");
     btn.type = "button";
     btn.textContent = ex.label;
     btn.addEventListener("click", () => loadExample(ex));
     li.appendChild(btn);
-    examplesEl.appendChild(li);
+    container.appendChild(li);
   }
+}
+
+function initExamples() {
+  initExampleList(federatedExamplesEl, federatedExamples);
+  initExampleList(singleExamplesEl, singleExamples);
 }
 
 document.getElementById("run-single").addEventListener("click", () => {
@@ -264,6 +288,8 @@ document.getElementById("select-warehouse-orders").addEventListener("click", () 
 });
 
 initExamples();
+refreshEditorLayout();
+window.addEventListener("resize", refreshEditorLayout);
 
 api("/api/connections")
   .then(renderConnections)

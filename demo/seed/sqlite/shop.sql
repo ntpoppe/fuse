@@ -1,11 +1,36 @@
 CREATE TABLE users (
-  id     INTEGER PRIMARY KEY,
-  name   TEXT NOT NULL,
-  email  TEXT NOT NULL,
-  active INTEGER NOT NULL DEFAULT 1
+  id         INTEGER PRIMARY KEY,
+  name       TEXT NOT NULL,
+  email      TEXT NOT NULL,
+  active     INTEGER NOT NULL DEFAULT 1,
+  country    TEXT NOT NULL,
+  tier       TEXT NOT NULL,
+  created_at TEXT NOT NULL
 );
 
-INSERT INTO users (id, name, email, active) VALUES
-  (1, 'Alice',   'alice@example.com',   1),
-  (2, 'Bob',     'bob@example.com',     1),
-  (3, 'Charlie', 'charlie@example.com', 0);
+INSERT INTO users (id, name, email, active, country, tier, created_at) VALUES
+  (1,  'Alice',   'alice@example.com',   1, 'US', 'gold',   '2024-01-15'),
+  (2,  'Bob',     'bob@example.com',     1, 'US', 'silver', '2024-02-03'),
+  (3,  'Charlie', 'charlie@example.com', 0, 'US', 'bronze', '2024-03-10'),
+  (4,  'Diana',   'diana@example.com',   1, 'UK', 'gold',   '2024-01-22'),
+  (5,  'Eve',     'eve@example.com',     1, 'CA', 'silver', '2024-04-01'),
+  (6,  'Frank',   'frank@example.com',   1, 'DE', 'bronze', '2024-05-18'),
+  (7,  'Grace',   'grace@example.com',   0, 'FR', 'silver', '2024-06-02'),
+  (8,  'Henry',   'henry@example.com',   1, 'US', 'gold',   '2024-02-28'),
+  (9,  'Iris',    'iris@example.com',    1, 'NL', 'silver', '2024-07-11'),
+  (10, 'Jack',    'jack@example.com',    1, 'AU', 'bronze', '2024-08-05'),
+  (11, 'Kate',    'kate@example.com',    1, 'UK', 'gold',   '2024-03-19'),
+  (12, 'Leo',     'leo@example.com',     0, 'IT', 'bronze', '2024-09-14'),
+  (13, 'Mia',     'mia@example.com',     1, 'ES', 'silver', '2024-10-01'),
+  (14, 'Noah',    'noah@example.com',    1, 'US', 'gold',   '2024-04-25'),
+  (15, 'Olivia',  'olivia@example.com',  1, 'CA', 'gold',   '2024-11-08'),
+  (16, 'Paul',    'paul@example.com',    1, 'DE', 'silver', '2024-12-12'),
+  (17, 'Quinn',   'quinn@example.com',   0, 'IE', 'bronze', '2025-01-03'),
+  (18, 'Rita',    'rita@example.com',    1, 'PT', 'silver', '2025-01-20'),
+  (19, 'Sam',     'sam@example.com',     1, 'US', 'bronze', '2025-02-07'),
+  (20, 'Tara',    'tara@example.com',    1, 'UK', 'silver', '2025-02-22'),
+  (21, 'Uma',     'uma@example.com',     1, 'IN', 'gold',   '2025-03-05'),
+  (22, 'Victor',  'victor@example.com',  1, 'BR', 'bronze', '2025-03-18'),
+  (23, 'Wendy',   'wendy@example.com',   0, 'MX', 'silver', '2025-04-02'),
+  (24, 'Xander',  'xander@example.com',  1, 'SE', 'gold',   '2025-04-15'),
+  (25, 'Yara',    'yara@example.com',    1, 'NO', 'silver', '2025-05-01');
