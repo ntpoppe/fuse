@@ -30,11 +30,7 @@ type connectionResponse struct {
 }
 
 type queryPayload struct {
-	ID  string `json:"id"`
-	SQL string `json:"sql"`
-}
-
-type federatedQueryPayload struct {
+	ID  string `json:"id,omitempty"`
 	SQL string `json:"sql"`
 }
 
@@ -60,7 +56,6 @@ func NewRouter(
 	router.HandleFunc("POST "+PathConnections, h.PostConnection)
 	router.HandleFunc("DELETE "+PathConnectionByID, h.DeleteConnection)
 	router.HandleFunc("POST "+PathQuery, h.PostQuery)
-	router.HandleFunc("POST "+PathFederatedQuery, h.PostFederatedQuery)
 
 	return &router
 }
@@ -175,34 +170,21 @@ func (h *Handler) PostQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if payload.ID == "" || payload.SQL == "" {
-		writeAPIError(w, http.StatusBadRequest, errMissingQueryFields)
+	if payload.SQL == "" {
+		writeAPIError(w, http.StatusBadRequest, errMissingSQL)
 		return
 	}
 
-	results, err := h.exec.ExecuteQuery(r.Context(), payload.ID, payload.SQL)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-
-	if err := writeJSON(w, http.StatusOK, results); err != nil {
-		writeAPIError(w, http.StatusInternalServerError, err.Error())
-	}
-}
-
-func (h *Handler) PostFederatedQuery(w http.ResponseWriter, r *http.Request) {
-	var payload federatedQueryPayload
-	if err := decodeJSON(w, r, h.http.MaxBodyBytes, &payload); err != nil {
-		if decodeJSONError(w, err) {
+	if payload.ID != "" {
+		results, err := h.exec.ExecuteQuery(r.Context(), payload.ID, payload.SQL)
+		if err != nil {
+			writeError(w, err)
 			return
 		}
-		writeAPIError(w, http.StatusBadRequest, errInvalidJSON)
-		return
-	}
 
-	if payload.SQL == "" {
-		writeAPIError(w, http.StatusBadRequest, errMissingFederatedSQL)
+		if err := writeJSON(w, http.StatusOK, results); err != nil {
+			writeAPIError(w, http.StatusInternalServerError, err.Error())
+		}
 		return
 	}
 

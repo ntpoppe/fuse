@@ -39,26 +39,25 @@
 
       <section>
         <h2>Federated examples</h2>
-        <p class="section-hint">Join SQLite <code>shop</code> to MySQL <code>warehouse</code>. Use <strong>Run federated</strong>.</p>
         <ul class="examples" id="federated-examples"></ul>
       </section>
 
       <section>
         <h2>Single-database examples</h2>
-        <p class="section-hint">Query one connection only. Use <strong>Run single</strong>.</p>
         <ul class="examples" id="single-examples"></ul>
       </section>
     </aside>
 
     <main class="main">
       <div class="editor-bar">
-        <label for="connection">Connection</label>
-        <select id="connection">
-          <option value="">federated</option>
+        <label for="connection">Target</label>
+        <select id="connection" title="Across connections for federated SQL, or one connection for plain table names">
+          <option value="">Across connections</option>
         </select>
-        <button type="button" id="run-single" class="btn">Run single</button>
-        <button type="button" id="run-federated" class="btn btn-primary">Run federated</button>
+        <button type="button" id="run-query" class="btn btn-primary">Run</button>
       </div>
+
+      <p id="mode-hint" class="mode-hint muted"></p>
 
       <div id="sql-editor" class="sql-editor"></div>
 

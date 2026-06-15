@@ -55,12 +55,20 @@ List connections:
 curl http://localhost:5000/api/connections
 ```
 
-Federated query (SQLite + MySQL):
+Federated query (SQLite + MySQL). Omit `id` for federated; include `id` for single-connection queries:
 
 ```bash
-curl -s -X POST http://localhost:5000/api/federated-query \
+curl -s -X POST http://localhost:5000/api/query \
   -H "Content-Type: application/json" \
   -d '{"sql":"SELECT u.id, u.name, o.total, o.status FROM shop.users u INNER JOIN warehouse.orders o ON u.id = o.user_id WHERE u.active = 1 AND o.status = '\''shipped'\'' LIMIT 100"}'
+```
+
+Single-connection query:
+
+```bash
+curl -s -X POST http://localhost:5000/api/query \
+  -H "Content-Type: application/json" \
+  -d '{"id":"shop","sql":"SELECT id, name FROM users WHERE active = 1 LIMIT 25"}'
 ```
 
 Connection add/remove should return **403** in demo mode.

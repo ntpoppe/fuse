@@ -92,7 +92,7 @@ func isQueryRequest(r *http.Request) bool {
 		return false
 	}
 	switch r.URL.Path {
-	case "/api/query", "/api/federated-query":
+	case "/api/query":
 		return true
 	default:
 		return false

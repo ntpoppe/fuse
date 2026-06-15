@@ -356,16 +356,18 @@ func TestHandler_DeleteConnection(t *testing.T) {
 func TestHandler_PostQuery(t *testing.T) {
 	t.Parallel()
 
+	validFederatedSQL := `SELECT u.id, u.name, o.total FROM billing.users u JOIN analytics.orders o ON u.id = o.user_id WHERE u.active = 1 LIMIT 100`
+
 	tests := []struct {
 		name       string
-		setup      func(t *testing.T, env apiEnv) string
+		setup      func(t *testing.T, env apiEnv) any
 		wantStatus int
 		bodySubstr string
 		verify     func(t *testing.T, rec *httptest.ResponseRecorder)
 	}{
 		{
-			name: "success",
-			setup: func(t *testing.T, env apiEnv) string {
+			name: "single success",
+			setup: func(t *testing.T, env apiEnv) any {
 				dbPath := testutil.SeedSQLiteFile(t, `
 					CREATE TABLE items (
 						id INTEGER PRIMARY KEY,
@@ -374,7 +376,10 @@ func TestHandler_PostQuery(t *testing.T) {
 					INSERT INTO items (name) VALUES ('alpha'), ('beta');
 				`)
 				registerSQLiteConnection(t, env, "query_conn", dbPath)
-				return `{"id":"query_conn","sql":"SELECT id, name FROM items ORDER BY id ASC"}`
+				return map[string]string{
+					"id":  "query_conn",
+					"sql": "SELECT id, name FROM items ORDER BY id ASC",
+				}
 			},
 			wantStatus: http.StatusOK,
 			verify: func(t *testing.T, rec *httptest.ResponseRecorder) {
@@ -392,54 +397,86 @@ func TestHandler_PostQuery(t *testing.T) {
 			},
 		},
 		{
+			name: "federated success",
+			setup: func(t *testing.T, env apiEnv) any {
+				registerFederatedSQLiteConnections(t, env)
+				return map[string]string{"sql": validFederatedSQL}
+			},
+			wantStatus: http.StatusOK,
+			verify: func(t *testing.T, rec *httptest.ResponseRecorder) {
+				var results []map[string]any
+				if err := json.NewDecoder(rec.Body).Decode(&results); err != nil {
+					t.Fatalf("decode response: %v", err)
+				}
+				if len(results) != 2 || results[0]["name"] != "alice" {
+					t.Fatalf("results = %+v, want two rows starting with alice", results)
+				}
+			},
+		},
+		{
 			name:       "invalid json",
-			setup:      func(*testing.T, apiEnv) string { return "not-json" },
+			setup:      func(*testing.T, apiEnv) any { return "not-json" },
 			wantStatus: http.StatusBadRequest,
 			bodySubstr: "invalid JSON payload",
 		},
 		{
-			name:       "missing id",
-			setup:      func(*testing.T, apiEnv) string { return `{"sql":"SELECT 1"}` },
-			wantStatus: http.StatusBadRequest,
-			bodySubstr: "missing required fields",
-		},
-		{
 			name:       "missing sql",
-			setup:      func(*testing.T, apiEnv) string { return `{"id":"conn1"}` },
+			setup:      func(*testing.T, apiEnv) any { return map[string]string{"id": "conn1"} },
 			wantStatus: http.StatusBadRequest,
-			bodySubstr: "missing required fields",
+			bodySubstr: "missing required field: sql",
 		},
 		{
-			name:       "empty fields",
-			setup:      func(*testing.T, apiEnv) string { return `{"id":"","sql":""}` },
+			name:       "empty sql",
+			setup:      func(*testing.T, apiEnv) any { return map[string]string{"id": "", "sql": ""} },
 			wantStatus: http.StatusBadRequest,
-			bodySubstr: "missing required fields",
+			bodySubstr: "missing required field: sql",
 		},
 		{
-			name: "read-only violation",
-			setup: func(t *testing.T, env apiEnv) string {
+			name:       "federated unqualified sql",
+			setup:      func(*testing.T, apiEnv) any { return map[string]string{"sql": "SELECT u.id FROM users u"} },
+			wantStatus: http.StatusBadRequest,
+			bodySubstr: "connection_id.table",
+		},
+		{
+			name: "single read-only violation",
+			setup: func(t *testing.T, env apiEnv) any {
 				dbPath := testutil.SeedSQLiteFile(t, `CREATE TABLE items (id INTEGER PRIMARY KEY);`)
 				registerSQLiteConnection(t, env, "query_conn", dbPath)
-				return `{"id":"query_conn","sql":"DELETE FROM items"}`
+				return map[string]string{
+					"id":  "query_conn",
+					"sql": "DELETE FROM items",
+				}
 			},
 			wantStatus: http.StatusBadRequest,
 			bodySubstr: "read-only violation",
 		},
 		{
-			name: "invalid sql",
-			setup: func(t *testing.T, env apiEnv) string {
+			name: "single invalid sql",
+			setup: func(t *testing.T, env apiEnv) any {
 				dbPath := testutil.SeedSQLiteFile(t, `CREATE TABLE items (id INTEGER PRIMARY KEY);`)
 				registerSQLiteConnection(t, env, "query_conn", dbPath)
-				return `{"id":"query_conn","sql":"SELECT * FROM missing_table"}`
+				return map[string]string{
+					"id":  "query_conn",
+					"sql": "SELECT * FROM missing_table",
+				}
 			},
 			wantStatus: http.StatusInternalServerError,
 			bodySubstr: "query:",
 		},
 		{
-			name:       "unknown connection",
-			setup:      func(*testing.T, apiEnv) string { return `{"id":"missing_conn","sql":"SELECT 1"}` },
+			name:       "single unknown connection",
+			setup:      func(*testing.T, apiEnv) any { return map[string]string{"id": "missing_conn", "sql": "SELECT 1"} },
 			wantStatus: http.StatusNotFound,
 			bodySubstr: "not found",
+		},
+		{
+			name: "federated unknown connection",
+			setup: func(t *testing.T, env apiEnv) any {
+				registerMockConnection(t, env, "billing")
+				return map[string]string{"sql": validFederatedSQL}
+			},
+			wantStatus: http.StatusNotFound,
+			bodySubstr: "analytics",
 		},
 	}
 
@@ -482,84 +519,6 @@ INSERT INTO orders (user_id, total) VALUES (1, 10.5), (2, 20.0);
 
 	registerSQLiteConnection(t, env, "billing", billingPath)
 	registerSQLiteConnection(t, env, "analytics", analyticsPath)
-}
-
-func TestHandler_PostFederatedQuery(t *testing.T) {
-	t.Parallel()
-
-	validSQL := `SELECT u.id, u.name, o.total FROM billing.users u JOIN analytics.orders o ON u.id = o.user_id WHERE u.active = 1 LIMIT 100`
-
-	tests := []struct {
-		name       string
-		setup      func(t *testing.T, env apiEnv) any
-		wantStatus int
-		bodySubstr string
-		verify     func(t *testing.T, rec *httptest.ResponseRecorder)
-	}{
-		{
-			name: "success",
-			setup: func(t *testing.T, env apiEnv) any {
-				registerFederatedSQLiteConnections(t, env)
-				return map[string]string{"sql": validSQL}
-			},
-			wantStatus: http.StatusOK,
-			verify: func(t *testing.T, rec *httptest.ResponseRecorder) {
-				var results []map[string]any
-				if err := json.NewDecoder(rec.Body).Decode(&results); err != nil {
-					t.Fatalf("decode response: %v", err)
-				}
-				if len(results) != 2 || results[0]["name"] != "alice" {
-					t.Fatalf("results = %+v, want two rows starting with alice", results)
-				}
-			},
-		},
-		{
-			name:       "invalid json",
-			setup:      func(*testing.T, apiEnv) any { return "not-json" },
-			wantStatus: http.StatusBadRequest,
-			bodySubstr: "invalid JSON payload",
-		},
-		{
-			name:       "missing sql",
-			setup:      func(*testing.T, apiEnv) any { return map[string]string{} },
-			wantStatus: http.StatusBadRequest,
-			bodySubstr: "missing required field: sql",
-		},
-		{
-			name: "invalid sql",
-			setup: func(*testing.T, apiEnv) any {
-				return map[string]string{"sql": "SELECT u.id FROM users u"}
-			},
-			wantStatus: http.StatusBadRequest,
-			bodySubstr: "connection_id.table",
-		},
-		{
-			name: "unknown connection",
-			setup: func(t *testing.T, env apiEnv) any {
-				registerMockConnection(t, env, "billing")
-				return map[string]string{"sql": validSQL}
-			},
-			wantStatus: http.StatusNotFound,
-			bodySubstr: "analytics",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			env := newAPIEnv(t)
-			rec := doJSON(t, env.handler, http.MethodPost, api.PathFederatedQuery, tt.setup(t, env))
-			assertStatus(t, rec, tt.wantStatus)
-
-			if tt.bodySubstr != "" {
-				assertJSONErrorContains(t, rec, tt.bodySubstr)
-			}
-			if tt.verify != nil {
-				tt.verify(t, rec)
-			}
-		})
-	}
 }
 
 type failingStore struct {
@@ -622,11 +581,11 @@ INSERT INTO items (name) VALUES ('alpha'), ('beta');
 	assertJSONErrorContains(t, rec, "query returned more than 1 rows")
 }
 
-func TestHandler_PostFederatedQuery_RowLimitExceeded(t *testing.T) {
+func TestHandler_PostQuery_FederatedRowLimitExceeded(t *testing.T) {
 	env := newAPIEnvWithMaxRows(t, 1)
 	registerFederatedSQLiteConnections(t, env)
 
-	rec := doJSON(t, env.handler, http.MethodPost, api.PathFederatedQuery, map[string]string{
+	rec := doJSON(t, env.handler, http.MethodPost, api.PathQuery, map[string]string{
 		"sql": `SELECT u.id, u.name, o.total FROM billing.users u JOIN analytics.orders o ON u.id = o.user_id WHERE u.active = 1`,
 	})
 	assertStatus(t, rec, http.StatusBadRequest)

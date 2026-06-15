@@ -53,12 +53,15 @@ const singleExamples = [
 
 const connectionsEl = document.getElementById("connections");
 const connectionSelect = document.getElementById("connection");
+const modeHintEl = document.getElementById("mode-hint");
 const sqlEditorEl = document.getElementById("sql-editor");
 const errorEl = document.getElementById("error");
 const resultsEl = document.getElementById("results");
 const resultsMetaEl = document.getElementById("results-meta");
 const federatedExamplesEl = document.getElementById("federated-examples");
 const singleExamplesEl = document.getElementById("single-examples");
+
+let connectionsByID = new Map();
 
 const sqlEditor = CodeMirror(sqlEditorEl, {
   value: federatedExamples[0].sql,
@@ -96,6 +99,31 @@ function showError(message) {
   refreshEditorLayout();
 }
 
+function updateModeHint() {
+  const id = connectionSelect.value;
+  if (!id) {
+    modeHintEl.textContent = "Querying across connections.";
+    return;
+  }
+
+  const conn = connectionsByID.get(id);
+  const driver = conn ? conn.driver : "";
+  const driverSuffix = driver ? ` (${driver})` : "";
+  modeHintEl.textContent = `Querying ${id}${driverSuffix} only.`;
+}
+
+function runLabel(connectionId) {
+  if (!connectionId) {
+    return "federated";
+  }
+
+  const conn = connectionsByID.get(connectionId);
+  if (conn && conn.driver) {
+    return `${connectionId} (${conn.driver})`;
+  }
+  return connectionId;
+}
+
 async function api(path, options) {
   const res = await fetch(`${API_BASE}${path}`, options);
   const text = await res.text();
@@ -114,14 +142,18 @@ async function api(path, options) {
 
 function renderConnections(connections) {
   connectionsEl.innerHTML = "";
-  connectionSelect.innerHTML = '<option value="">federated</option>';
+  connectionSelect.innerHTML = '<option value="">Across connections</option>';
+  connectionsByID = new Map();
 
   if (!connections.length) {
     connectionsEl.innerHTML = '<li class="muted">No connections</li>';
+    updateModeHint();
     return;
   }
 
   for (const conn of connections) {
+    connectionsByID.set(conn.id, conn);
+
     const li = document.createElement("li");
     li.innerHTML =
       '<span class="conn-id">' +
@@ -136,6 +168,8 @@ function renderConnections(connections) {
     opt.textContent = conn.id + " (" + conn.driver + ")";
     connectionSelect.appendChild(opt);
   }
+
+  updateModeHint();
 }
 
 function escapeHtml(s) {
@@ -146,16 +180,18 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
-function renderResults(rows) {
+function renderResults(rows, connectionId) {
   resultsEl.innerHTML = "";
+  const label = runLabel(connectionId);
 
   if (!Array.isArray(rows) || rows.length === 0) {
-    resultsMetaEl.textContent = "0 rows";
+    resultsMetaEl.textContent = `0 rows · ${label}`;
     resultsEl.innerHTML = '<p class="muted">No rows returned.</p>';
     return;
   }
 
-  resultsMetaEl.textContent = rows.length + (rows.length === 1 ? " row" : " rows");
+  const rowWord = rows.length === 1 ? "row" : "rows";
+  resultsMetaEl.textContent = `${rows.length} ${rowWord} · ${label}`;
 
   const columns = Object.keys(rows[0]);
   const table = document.createElement("table");
@@ -185,52 +221,28 @@ function renderResults(rows) {
   resultsEl.appendChild(table);
 }
 
-async function runSingle() {
-  const id = connectionSelect.value;
+async function runQuery() {
+  const connectionId = connectionSelect.value;
   const sql = getSQL();
-  if (!id) {
-    showError("Select a connection for a single-database query, or use Run federated.");
-    return;
-  }
-  if (!sql) {
-    showError("Enter a SQL statement.");
-    return;
-  }
   showError("");
+
+  const payload = { sql };
+  if (connectionId) {
+    payload.id = connectionId;
+  }
+
   const rows = await api("/api/query", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id, sql }),
+    body: JSON.stringify(payload),
   });
-  renderResults(rows);
-}
-
-async function runFederated() {
-  const sql = getSQL();
-  if (!sql) {
-    showError("Enter a SQL statement.");
-    return;
-  }
-  showError("");
-  const rows = await api("/api/federated-query", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sql }),
-  });
-  renderResults(rows);
+  renderResults(rows, connectionId);
 }
 
 function handleRunError(err) {
   showError(err.message);
   resultsEl.innerHTML = "";
   resultsMetaEl.textContent = "";
-}
-
-function runSelectedQuery() {
-  if (connectionSelect.value) {
-    return runSingle();
-  }
-  return runFederated();
 }
 
 function loadExample(example) {
@@ -240,12 +252,14 @@ function loadExample(example) {
   } else {
     connectionSelect.value = "";
   }
+  updateModeHint();
   showError("");
 }
 
 function loadTableQuery(sql) {
   setSQL(sql);
   connectionSelect.value = "";
+  updateModeHint();
   showError("");
 }
 
@@ -266,17 +280,15 @@ function initExamples() {
   initExampleList(singleExamplesEl, singleExamples);
 }
 
-document.getElementById("run-single").addEventListener("click", () => {
-  runSingle().catch(handleRunError);
+document.getElementById("run-query").addEventListener("click", () => {
+  runQuery().catch(handleRunError);
 });
 
-document.getElementById("run-federated").addEventListener("click", () => {
-  runFederated().catch(handleRunError);
-});
+connectionSelect.addEventListener("change", updateModeHint);
 
 sqlEditor.setOption("extraKeys", {
-  "Ctrl-Enter": () => runSelectedQuery().catch(handleRunError),
-  "Cmd-Enter": () => runSelectedQuery().catch(handleRunError),
+  "Ctrl-Enter": () => runQuery().catch(handleRunError),
+  "Cmd-Enter": () => runQuery().catch(handleRunError),
 });
 
 document.getElementById("select-shop-users").addEventListener("click", () => {
@@ -288,6 +300,7 @@ document.getElementById("select-warehouse-orders").addEventListener("click", () 
 });
 
 initExamples();
+updateModeHint();
 refreshEditorLayout();
 window.addEventListener("resize", refreshEditorLayout);
 
