@@ -74,6 +74,30 @@ func TestConfig_Validate(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "demo mode allows 0.0.0.0 host",
+			cfg: config.Config{
+				Host:           "0.0.0.0",
+				Port:           8080,
+				StateDBPath:    storage.DefaultStateDBPath,
+				MaxQueryRows:   config.DefaultMaxQueryRows,
+				DemoMode:       true,
+				DemoSQLitePath: config.DefaultDemoSQLitePath,
+				DemoMySQLDSN:   config.DefaultDemoMySQLDSN,
+			},
+		},
+		{
+			name: "demo mode requires sqlite path",
+			cfg: config.Config{
+				Host:         config.DefaultHost,
+				Port:         8080,
+				StateDBPath:  storage.DefaultStateDBPath,
+				MaxQueryRows: config.DefaultMaxQueryRows,
+				DemoMode:     true,
+				DemoMySQLDSN: config.DefaultDemoMySQLDSN,
+			},
+			wantErr: true,
+		},
+		{
 			name: "invalid host",
 			cfg: config.Config{
 				Host:         "not-a-host",

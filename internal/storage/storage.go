@@ -57,6 +57,14 @@ func (s *Store) RemoveConnection(ctx context.Context, id string) error {
 	return nil
 }
 
+func (s *Store) RemoveAllConnections(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, queryRemoveAllConnections)
+	if err != nil {
+		return fmt.Errorf("remove all connections: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) GetAllConnections(ctx context.Context) ([]SavedConnection, error) {
 	rows, err := s.db.QueryContext(ctx, queryListConnections)
 	if err != nil {

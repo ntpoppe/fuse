@@ -14,6 +14,7 @@ import (
 
 	"github.com/ntpoppe/fuse/internal/api"
 	"github.com/ntpoppe/fuse/internal/config"
+	"github.com/ntpoppe/fuse/internal/demo"
 	connectionmanager "github.com/ntpoppe/fuse/internal/connection_manager"
 	"github.com/ntpoppe/fuse/internal/driver"
 	"github.com/ntpoppe/fuse/internal/executor"
@@ -57,14 +58,20 @@ func main() {
 		log.Printf("warning: restore saved connections: %v", err)
 	}
 
-	for _, conn := range saved {
-		log.Printf("restoring connection %q (driver=%q)", conn.ID, conn.Driver)
-		if err := cm.RegisterConnection(conn.ID, conn.Driver, conn.Host); err != nil {
-			log.Printf("failed to restore connection %q: %v", conn.ID, err)
+	if cfg.DemoMode {
+		if err := demo.SeedConnections(initCtx, cm, store, cfg); err != nil {
+			log.Fatalf("seed demo connections: %v", err)
+		}
+	} else {
+		for _, conn := range saved {
+			log.Printf("restoring connection %q (driver=%q)", conn.ID, conn.Driver)
+			if err := cm.RegisterConnection(conn.ID, conn.Driver, conn.Host); err != nil {
+				log.Printf("failed to restore connection %q: %v", conn.ID, err)
+			}
 		}
 	}
 
-	router := api.NewRouter(cm, store, exec, fedExec)
+	router := api.NewRouter(cm, store, exec, fedExec, cfg.DemoMode)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
@@ -98,10 +105,15 @@ func main() {
 }
 
 func parseFlags(cfg *config.Config) {
+	config.ApplyEnv(cfg)
+
 	flag.StringVar(&cfg.Host, "host", cfg.Host, "host address to listen on")
 	flag.IntVar(&cfg.Port, "port", config.DefaultPort, "port to listen on")
 	flag.StringVar(&cfg.StateDBPath, "state-db", cfg.StateDBPath, "path to local state database")
 	flag.IntVar(&cfg.MaxQueryRows, "max-query-rows", cfg.MaxQueryRows, "maximum rows returned per query")
+	flag.BoolVar(&cfg.DemoMode, "demo", cfg.DemoMode, "enable demo mode (fixed connections, no connection CRUD)")
+	flag.StringVar(&cfg.DemoSQLitePath, "demo-sqlite-path", cfg.DemoSQLitePath, "sqlite database path for demo shop connection")
+	flag.StringVar(&cfg.DemoMySQLDSN, "demo-mysql-dsn", cfg.DemoMySQLDSN, "mysql DSN for demo warehouse connection")
 
 	flag.Parse()
 

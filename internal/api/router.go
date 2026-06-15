@@ -9,10 +9,11 @@ import (
 )
 
 type Handler struct {
-	cr      ConnectionRegistrar
-	store   ConnectionStore
-	exec    *executor.Executor
-	fedExec *executor.FederatedExecutor
+	cr        ConnectionRegistrar
+	store     ConnectionStore
+	exec      *executor.Executor
+	fedExec   *executor.FederatedExecutor
+	demoMode  bool
 }
 
 type connectionPayload struct {
@@ -41,14 +42,16 @@ func NewRouter(
 	store ConnectionStore,
 	exec *executor.Executor,
 	fedExec *executor.FederatedExecutor,
+	demoMode bool,
 ) http.Handler {
 	router := http.ServeMux{}
 
 	h := &Handler{
-		cr:      cr,
-		store:   store,
-		exec:    exec,
-		fedExec: fedExec,
+		cr:       cr,
+		store:    store,
+		exec:     exec,
+		fedExec:  fedExec,
+		demoMode: demoMode,
 	}
 
 	router.HandleFunc("GET "+PathHealth, h.GetHealth)
@@ -89,6 +92,11 @@ func (h *Handler) GetConnections(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) PostConnection(w http.ResponseWriter, r *http.Request) {
+	if h.demoMode {
+		writeAPIError(w, http.StatusForbidden, errDemoModeConnections)
+		return
+	}
+
 	var payload connectionPayload
 	if err := decodeJSON(w, r, &payload); err != nil {
 		if decodeJSONError(w, err) {
@@ -123,6 +131,11 @@ func (h *Handler) PostConnection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DeleteConnection(w http.ResponseWriter, r *http.Request) {
+	if h.demoMode {
+		writeAPIError(w, http.StatusForbidden, errDemoModeConnections)
+		return
+	}
+
 	id := r.PathValue("id")
 	if id == "" {
 		writeAPIError(w, http.StatusBadRequest, errMissingConnectionID)

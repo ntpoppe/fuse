@@ -3,28 +3,50 @@ package config
 import (
 	"fmt"
 	"net"
+	"os"
+	"strings"
 
 	"github.com/ntpoppe/fuse/internal/storage"
 )
 
 const (
-	DefaultHost         = "127.0.0.1"
-	DefaultPort         = 5000
-	DefaultMaxQueryRows = 10_000
+	DefaultHost           = "127.0.0.1"
+	DefaultPort           = 5000
+	DefaultMaxQueryRows   = 10_000
+	DefaultDemoSQLitePath = "/data/shop.db"
+	DefaultDemoMySQLDSN   = "demo:demo@tcp(mysql:3306)/fuse_test"
 )
 
 type Config struct {
-	Host         string
-	Port         int
-	StateDBPath  string
-	MaxQueryRows int
+	Host           string
+	Port           int
+	StateDBPath    string
+	MaxQueryRows   int
+	DemoMode       bool
+	DemoSQLitePath string
+	DemoMySQLDSN   string
 }
 
 func NewConfig() *Config {
 	return &Config{
-		Host:         DefaultHost,
-		StateDBPath:  storage.DefaultStateDBPath,
-		MaxQueryRows: DefaultMaxQueryRows,
+		Host:           DefaultHost,
+		StateDBPath:    storage.DefaultStateDBPath,
+		MaxQueryRows:   DefaultMaxQueryRows,
+		DemoSQLitePath: DefaultDemoSQLitePath,
+		DemoMySQLDSN:   DefaultDemoMySQLDSN,
+	}
+}
+
+func ApplyEnv(cfg *Config) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("FUSE_DEMO_MODE"))) {
+	case "1", "true":
+		cfg.DemoMode = true
+	}
+	if v := os.Getenv("FUSE_DEMO_SQLITE_PATH"); v != "" {
+		cfg.DemoSQLitePath = v
+	}
+	if v := os.Getenv("FUSE_DEMO_MYSQL_DSN"); v != "" {
+		cfg.DemoMySQLDSN = v
 	}
 }
 
@@ -50,6 +72,15 @@ func (c *Config) Validate() error {
 
 	if c.MaxQueryRows < 1 {
 		return fmt.Errorf("max query rows must be at least 1")
+	}
+
+	if c.DemoMode {
+		if c.DemoSQLitePath == "" {
+			return fmt.Errorf("demo sqlite path must not be empty")
+		}
+		if c.DemoMySQLDSN == "" {
+			return fmt.Errorf("demo mysql DSN must not be empty")
+		}
 	}
 
 	return nil

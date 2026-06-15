@@ -16,6 +16,9 @@ DELETE FROM saved_connections WHERE id = ?;`
 	queryListConnections = `
 SELECT id, driver, host FROM saved_connections;`
 
+	queryRemoveAllConnections = `
+DELETE FROM saved_connections;`
+
 	schemaConnectionsCreate = `
 CREATE TABLE IF NOT EXISTS saved_connections (
 	id TEXT PRIMARY KEY,

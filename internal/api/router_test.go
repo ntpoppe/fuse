@@ -31,6 +31,10 @@ func newAPIEnv(t *testing.T) apiEnv {
 }
 
 func newAPIEnvWithMaxRows(t *testing.T, maxRows int) apiEnv {
+	return newAPIEnvWithOptions(t, maxRows, false)
+}
+
+func newAPIEnvWithOptions(t *testing.T, maxRows int, demoMode bool) apiEnv {
 	t.Helper()
 
 	store := storage.NewStore(testutil.OpenSQLiteMemory(t))
@@ -44,7 +48,7 @@ func newAPIEnvWithMaxRows(t *testing.T, maxRows int) apiEnv {
 	fedExec := executor.NewFederatedExecutor(reg, maxRows)
 
 	return apiEnv{
-		handler: api.NewRouter(cm, store, exec, fedExec),
+		handler: api.NewRouter(cm, store, exec, fedExec, demoMode),
 		store:  store,
 		cm:     cm,
 	}
@@ -234,6 +238,29 @@ func TestHandler_PostConnection(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHandler_PostConnection_DemoMode(t *testing.T) {
+	t.Parallel()
+
+	env := newAPIEnvWithOptions(t, config.DefaultMaxQueryRows, true)
+	driverName := testutil.RegisterNamedMockDriver(t, "demo-blocked", false)
+
+	rec := doJSON(t, env.handler, http.MethodPost, api.PathConnections, map[string]string{
+		"id": "conn1", "driver": driverName, "host": "localhost:3306",
+	})
+	assertStatus(t, rec, http.StatusForbidden)
+	assertJSONErrorContains(t, rec, "demo mode")
+}
+
+func TestHandler_DeleteConnection_DemoMode(t *testing.T) {
+	t.Parallel()
+
+	env := newAPIEnvWithOptions(t, config.DefaultMaxQueryRows, true)
+
+	rec := doRequest(t, env.handler, http.MethodDelete, api.PathConnections+"/shop", nil, "")
+	assertStatus(t, rec, http.StatusForbidden)
+	assertJSONErrorContains(t, rec, "demo mode")
 }
 
 func TestHandler_PostConnection_DuplicateID(t *testing.T) {
@@ -558,7 +585,7 @@ func TestHandler_PostConnection_StorageRollback(t *testing.T) {
 
 	reg := registry.NewRegistry()
 	cm := connectionmanager.NewConnectionManager(reg)
-	handler := api.NewRouter(cm, &failingStore{inner: store}, executor.NewExecutor(reg, config.DefaultMaxQueryRows), executor.NewFederatedExecutor(reg, config.DefaultMaxQueryRows))
+	handler := api.NewRouter(cm, &failingStore{inner: store}, executor.NewExecutor(reg, config.DefaultMaxQueryRows), executor.NewFederatedExecutor(reg, config.DefaultMaxQueryRows), false)
 
 	driverName := testutil.RegisterNamedMockDriver(t, "rollback", false)
 	rec := doJSON(t, handler, http.MethodPost, api.PathConnections, map[string]string{

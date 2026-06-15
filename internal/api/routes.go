@@ -16,5 +16,6 @@ const (
 	errMissingQueryFields     = "missing required fields: id and sql"
 	errMissingFederatedSQL    = "missing required field: sql"
 	errMissingConnFields   = "missing required fields: id, driver, and host"
-	errMissingConnectionID = "missing connection id"
+	errMissingConnectionID   = "missing connection id"
+	errDemoModeConnections   = "demo mode: connections are read-only"
 )
