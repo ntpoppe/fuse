@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fuse Demo - Federated SQL</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+</head>
+<body>
+  <header class="header">
+    <h1>Fuse Demo</h1>
+    <p class="tagline">Federated SQL across SQLite and MySQL</p>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <section>
+        <h2>Connections</h2>
+        <ul id="connections" class="connections">
+          <li class="muted">Loading...</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Schema</h2>
+        <dl class="schema">
+          <dt>shop.users</dt>
+          <dd>id, name, email, active</dd>
+          <dt>warehouse.orders</dt>
+          <dd>id, user_id, total, status</dd>
+          <dt>Join</dt>
+          <dd><code>shop.users.id = warehouse.orders.user_id</code></dd>
+        </dl>
+        <div class="schema-actions">
+          <button type="button" id="select-shop-users" class="btn btn-small">All columns: shop.users</button>
+          <button type="button" id="select-warehouse-orders" class="btn btn-small">All columns: warehouse.orders</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Examples</h2>
+        <ul class="examples" id="examples"></ul>
+      </section>
+    </aside>
+
+    <main class="main">
+      <div class="editor-bar">
+        <label for="connection">Connection</label>
+        <select id="connection">
+          <option value="">federated</option>
+        </select>
+        <button type="button" id="run-single" class="btn">Run single</button>
+        <button type="button" id="run-federated" class="btn btn-primary">Run federated</button>
+      </div>
+
+      <div id="sql-editor" class="sql-editor"></div>
+
+      <div id="error" class="error hidden" role="alert"></div>
+
+      <div class="results-wrap">
+        <p id="results-meta" class="results-meta muted"></p>
+        <div id="results" class="results"></div>
+      </div>
+    </main>
+  </div>
+
+  <footer class="footer">
+    <span>Demo mode (read-only)</span>
+    <a href="https://github.com/ntpoppe/fuse" target="_blank" rel="noopener noreferrer">GitHub</a>
+  </footer>
+
+  <script src="/config.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/sql/sql.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

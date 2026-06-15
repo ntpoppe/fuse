@@ -17,6 +17,11 @@ const (
 	DefaultDemoMySQLDSN   = "demo:demo@tcp(mysql:3306)/fuse_test"
 )
 
+var DefaultDemoCORSOrigins = []string{
+	"http://localhost:8080",
+	"http://127.0.0.1:8080",
+}
+
 type Config struct {
 	Host           string
 	Port           int
@@ -25,6 +30,7 @@ type Config struct {
 	DemoMode       bool
 	DemoSQLitePath string
 	DemoMySQLDSN   string
+	CORSOrigins    []string
 }
 
 func NewConfig() *Config {
@@ -48,6 +54,28 @@ func ApplyEnv(cfg *Config) {
 	if v := os.Getenv("FUSE_DEMO_MYSQL_DSN"); v != "" {
 		cfg.DemoMySQLDSN = v
 	}
+	if v := os.Getenv("FUSE_CORS_ORIGINS"); v != "" {
+		cfg.CORSOrigins = SplitCSV(v)
+	}
+}
+
+func ApplyDemoDefaults(cfg *Config) {
+	if !cfg.DemoMode || len(cfg.CORSOrigins) > 0 {
+		return
+	}
+	cfg.CORSOrigins = append([]string(nil), DefaultDemoCORSOrigins...)
+}
+
+func SplitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func (c *Config) Validate() error {

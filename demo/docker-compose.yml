@@ -19,12 +19,20 @@ services:
       context: ..
       dockerfile: demo/Dockerfile
     ports:
-      - "8080:5000"
+      - "5000:5000"
     environment:
       FUSE_DEMO_MODE: "1"
+      FUSE_CORS_ORIGINS: "http://localhost:8080,http://127.0.0.1:8080"
     depends_on:
       mysql:
         condition: service_healthy
+
+  web:
+    image: httpd:2.4-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./ui:/usr/local/apache2/htdocs/:ro
 
 volumes:
   mysql_data:

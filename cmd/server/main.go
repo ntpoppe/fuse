@@ -72,10 +72,11 @@ func main() {
 	}
 
 	router := api.NewRouter(cm, store, exec, fedExec, cfg.DemoMode)
+	handler := api.WithCORS(cfg.CORSOrigins, router)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
-		Handler:      router,
+		Handler:      handler,
 		ReadTimeout:  serverReadTimeout,
 		WriteTimeout: serverWriteTimeout,
 		IdleTimeout:  serverIdleTimeout,
@@ -107,6 +108,8 @@ func main() {
 func parseFlags(cfg *config.Config) {
 	config.ApplyEnv(cfg)
 
+	var corsOriginsFlag string
+
 	flag.StringVar(&cfg.Host, "host", cfg.Host, "host address to listen on")
 	flag.IntVar(&cfg.Port, "port", config.DefaultPort, "port to listen on")
 	flag.StringVar(&cfg.StateDBPath, "state-db", cfg.StateDBPath, "path to local state database")
@@ -114,8 +117,15 @@ func parseFlags(cfg *config.Config) {
 	flag.BoolVar(&cfg.DemoMode, "demo", cfg.DemoMode, "enable demo mode (fixed connections, no connection CRUD)")
 	flag.StringVar(&cfg.DemoSQLitePath, "demo-sqlite-path", cfg.DemoSQLitePath, "sqlite database path for demo shop connection")
 	flag.StringVar(&cfg.DemoMySQLDSN, "demo-mysql-dsn", cfg.DemoMySQLDSN, "mysql DSN for demo warehouse connection")
+	flag.StringVar(&corsOriginsFlag, "cors-origins", "", "comma-separated allowed CORS origins (overrides FUSE_CORS_ORIGINS)")
 
 	flag.Parse()
+
+	if corsOriginsFlag != "" {
+		cfg.CORSOrigins = config.SplitCSV(corsOriginsFlag)
+	}
+
+	config.ApplyDemoDefaults(cfg)
 
 	if err := cfg.Validate(); err != nil {
 		fmt.Fprintf(os.Stderr, "configuration error: %v\n", err)

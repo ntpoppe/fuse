@@ -123,3 +123,27 @@ func TestConfig_Validate(t *testing.T) {
 		})
 	}
 }
+
+func TestApplyDemoDefaults(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Config{
+		DemoMode:       true,
+		DemoSQLitePath: config.DefaultDemoSQLitePath,
+		DemoMySQLDSN:   config.DefaultDemoMySQLDSN,
+	}
+	config.ApplyDemoDefaults(&cfg)
+
+	if len(cfg.CORSOrigins) != 2 {
+		t.Fatalf("CORS origins = %v, want 2 demo defaults", cfg.CORSOrigins)
+	}
+
+	cfgWithCORS := config.Config{
+		DemoMode:    true,
+		CORSOrigins: []string{"http://example.com"},
+	}
+	config.ApplyDemoDefaults(&cfgWithCORS)
+	if len(cfgWithCORS.CORSOrigins) != 1 || cfgWithCORS.CORSOrigins[0] != "http://example.com" {
+		t.Fatalf("CORS origins = %v, want preserved custom origin", cfgWithCORS.CORSOrigins)
+	}
+}
