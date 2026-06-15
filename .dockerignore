@@ -1,0 +1,6 @@
+.git
+.gitignore
+*.db
+*.db-journal
+.idea/
+.vscode/
